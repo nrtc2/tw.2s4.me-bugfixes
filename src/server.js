@@ -10,7 +10,12 @@ var express = require("express");
 var path = require("path"); // essential
 const { notDeepEqual } = require("assert");
 var anonymous = [] // so suspicious!
-var settings = JSON.parse(fs.readFileSync("../data/settings.json"));
+
+let customSettingsPath = process.argv[2];
+var settings = JSON.parse(fs.readFileSync(
+	(customSettingsPath && customSettingsPath.includes("/")) ? customSettingsPath :
+		"../data/settings.json"
+));
 
 console.log("Starting server...");
 
@@ -615,7 +620,7 @@ async function runserver() {
 	}
 
 
-	function createAdminRequest(actionPath, handler, opts = { noR: true, get: false }) {
+	function createAdminRequest(actionPath, handler, opts = { noR: false, get: false }) {
 		const useAuth = !opts.noR;
 		if (useAuth) {
 			twrApp.post(`/admin/${actionPath}`, requireAuth, handler);
@@ -656,7 +661,7 @@ async function runserver() {
 		});
 
 		res.json({ success: true });
-	});
+	}, { noR: true });
 
 	createAdminRequest('check', (req, res) => {
 		const token = req.cookies?.admin_session;
@@ -1041,15 +1046,14 @@ async function runserver() {
 	const adminPath = path.join(__dirname, "../admin");
 	twrApp.use("/admin", express.static(adminPath));
 	twrApp.get(/^\/admin(\/.*)?$/, (req, res) => {
-		const requestedFile = path.join(adminPath, req.path.replace("/admin/", ""));
+		// remove leading "/admin/" and leading slash, so attackers can't use traversal paths
+		let rel = req.path.replace(/^\/admin\/?/, '');
+		if (!rel) rel = 'index.html';
 
-		fs.access(requestedFile, fs.constants.F_OK, (err) => {
+		// express will resolve against root and prevent escaping it
+		res.sendFile(rel, { root: adminPath }, (err) => {
 			if (err) {
-
-				res.sendFile(path.join("", "index.html"));
-			} else {
-
-				res.sendFile(requestedFile);
+				return res.sendFile('index.html', { root: adminPath });
 			}
 		});
 	});
@@ -1896,7 +1900,8 @@ function init_ws() {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 
 					e: {
-						e: resp
+						e: resp,
+						clientId: sdata.clientId
 					}
 				}));
 			} else if ("msg" == packetType) {
@@ -2493,7 +2498,7 @@ function init_ws() {
 					perms: 0
 				}));
 				sdata.isAdmin = false
-		send(ws, encodeMsgpack({ admin: false }));
+				send(ws, encodeMsgpack({ admin: false }));
 				sdata.isAuthenticated = false;
 				sdata.authUser = "";
 				sdata.authUserId = 0;
@@ -2925,4 +2930,3 @@ process.once("SIGINT", function () {
 	commitChunks();
 	process.exit();
 });
-

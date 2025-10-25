@@ -620,7 +620,7 @@ async function runserver() {
 	}
 
 
-	function createAdminRequest(actionPath, handler, opts = { noR: true, get: false }) {
+	function createAdminRequest(actionPath, handler, opts = { noR: false, get: false }) {
 		const useAuth = !opts.noR;
 		if (useAuth) {
 			twrApp.post(`/admin/${actionPath}`, requireAuth, handler);
@@ -661,7 +661,7 @@ async function runserver() {
 		});
 
 		res.json({ success: true });
-	});
+	}, { noR: true });
 
 	createAdminRequest('check', (req, res) => {
 		const token = req.cookies?.admin_session;
@@ -1048,13 +1048,10 @@ async function runserver() {
 	/*twrApp.get(/^\/admin(\/.*)?$/, (req, res) => {
 		const requestedFile = path.join(adminPath, req.path.replace("/admin/", ""));
 
-		fs.access(requestedFile, fs.constants.F_OK, (err) => {
+		// express will resolve against root and prevent escaping it
+		res.sendFile(rel, { root: adminPath }, (err) => {
 			if (err) {
-
-				res.sendFile(path.join("", "index.html"));
-			} else {
-
-				res.sendFile(requestedFile);
+				return res.sendFile('index.html', { root: adminPath });
 			}
 		});
 	});*/
@@ -1901,7 +1898,8 @@ function init_ws() {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 
 					e: {
-						e: resp
+						e: resp,
+						clientId: sdata.clientId
 					}
 				}));
 			} else if ("msg" == packetType) {
@@ -2498,7 +2496,7 @@ function init_ws() {
 					perms: 0
 				}));
 				sdata.isAdmin = false
-		send(ws, encodeMsgpack({ admin: false }));
+				send(ws, encodeMsgpack({ admin: false }));
 				sdata.isAuthenticated = false;
 				sdata.authUser = "";
 				sdata.authUserId = 0;
@@ -2930,4 +2928,3 @@ process.once("SIGINT", function () {
 	commitChunks();
 	process.exit();
 });
-

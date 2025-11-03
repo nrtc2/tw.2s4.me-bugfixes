@@ -603,6 +603,24 @@ function mask_ip(ip) {
 		return ip.replace(/^(\d+)\.\d+\.\d+\.\d+$/, "$1.X.X.X");
 	}
 }
+const WHITELIST_FILE = "../data/whitelist.json";
+
+function loadWhitelist() {
+	try {
+		return JSON.parse(fs.readFileSync(WHITELIST_FILE));
+	} catch {
+		return [false, []];
+	}
+}
+
+function saveWhitelist(data) {
+	fs.writeFileSync(WHITELIST_FILE, JSON.stringify(data, null, 2));
+}
+function isWhitelisted(username) {
+    const [enabled, users] = loadWhitelist();
+    if (!enabled) return true; // whitelist disabled, allow all
+    return users.includes(username);
+}
 var httpServer;
 async function runserver() {
 	var twrApp = express();
@@ -1043,6 +1061,33 @@ async function runserver() {
 
 		res.json({ page, pageSize, totalItems, totalPages, data });
 	}, { get: true });
+	createAdminRequest("whitelist/add", (req, res) => {
+		const { user } = req.body;
+		if (!user) return res.status(400).send("Missing 'user'");
+		const wl = loadWhitelist();
+		if (!wl[1].includes(user)) wl[1].push(user);
+		saveWhitelist(wl);
+		res.json(wl);
+	})
+	createAdminRequest("whitelist/remove", (req, res) => {
+		const { user } = req.body;
+		if (!user) return res.status(400).send("Missing 'user'");
+		const wl = loadWhitelist();
+		wl[1] = wl[1].filter(u => u !== user);
+		saveWhitelist(wl);
+		res.json(wl);
+	})
+	createAdminRequest("whitelist/toggle", (req, res) => {
+		const { toggle } = req.body;
+		const wl = loadWhitelist();
+		wl[0] = Boolean(toggle);
+		saveWhitelist(wl);
+		res.json(wl);
+	})
+	createAdminRequest("whitelist/list", (req, res) => {
+		const wl = loadWhitelist();
+		res.json(wl);
+	}, {get: true})
 	const adminPath = path.join(__dirname, "../admin");
 	twrApp.use("/admin", express.static(adminPath));
 	twrApp.get(/^\/admin(\/.*)?$/, (req, res) => {
@@ -1640,7 +1685,6 @@ function init_ws() {
 			}
 
 
-
 			if ("j" == packetType) {
 				var world = data.j;
 
@@ -1821,6 +1865,9 @@ function init_ws() {
 				// never send if on anonymous mode
 				if (anonymous.includes(sdata.clientId.toLowerCase())) return;
 				if (sdata.worldAttr.private && !sdata.isMember) return;
+				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
+					return;
+				}
 
 				if ("l" in data.ce) {
 					var x = data.ce.l[0];
@@ -1857,7 +1904,11 @@ function init_ws() {
 					}))
 					return;
 				}
-				// never send if on anonymous mode
+				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {send(ws, encodeMsgpack({
+						alert: "You are not authorized"
+					}))
+					return;}
+		
 
 				if (sdata.worldAttr.readonly && !sdata.isMember) return;
 				if (sdata.worldAttr.private && !sdata.isMember) return;
@@ -1877,7 +1928,7 @@ function init_ws() {
 					obj.push(x, y);
 					resp.push(obj);
 					for (var j = 0; j < Math.floor((chunk.length - 2) / 3); j++) {
-						if (ecount > 1000) return;
+						if (ecount > rateLimits.e) return;
 						var chr = chunk[j * 3 + 2];
 						var idx = chunk[j * 3 + 3];
 						var colfmt = chunk[j * 3 + 4];
@@ -1909,6 +1960,12 @@ function init_ws() {
 
 				if (typeof message != "string") return;
 				if (message.length > 256) return;
+				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
+					send(ws, encodeMsgpack({
+						msg: ["[SERVER]", 4, "You are not authorized", true]
+					}));
+					return;
+				}
 
 				var nick = sdata.clientId;
 				if (sdata.isAuthenticated) {
@@ -2334,6 +2391,12 @@ function init_ws() {
 				}
 			} else if ("register" == packetType) {
 				if (sdata.isAuthenticated) return;
+				if (!sdata.isAuthenticated) {
+					send(ws, encodeMsgpack({
+						alert: "Registration is closed."
+					}));
+					return
+				}
 				var cred = data.register;
 
 				if (!Array.isArray(cred)) return;

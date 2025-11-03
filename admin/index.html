@@ -117,6 +117,24 @@
         <div class="tab" data-tab="Ratelimit">Ratelimit</div>
         <div class="tab" data-tab="Actions">Actions</div>
     </div>
+    <div class="tab-content" id="Settings">
+        <h3>Whitelist</h3>
+        <br>
+        A whitelist is a system that only accepts requests from allowed clients below in the whitelist.
+        <br>
+        <input type="checkbox" id="enable">Enable whitelist
+        <br/>
+        <br/>
+
+        Add users here:
+        <input type="text" id="whadduser">
+        <hr>
+        <fieldset id="users">
+            <legend>Whitelisted users</legend>
+            <!--the below, has buttons, and clicking them will remove them out of whitelist-->
+        </fieldset>
+        
+    </div>
     <div class="tab-content" id="Accounts">
         <div class="controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
             <input type="text" id="accSearchInput" placeholder="Search users..." style="padding:5px; flex:1;" />

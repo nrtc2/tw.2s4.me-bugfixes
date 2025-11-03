@@ -10,5 +10,5 @@
 		"enabled": false,
 		"path": "./log.txt"
 	},
-	"adminList": []
+	"adminList": ["h"]
 }

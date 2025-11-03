@@ -381,4 +381,55 @@ sendAdminRequest('uptime', d => {
         `${month} ${day}, ${year}, ${hours}:${minutes} ${ampm}`;
 }, { get: true });
 
+async function refreshWhitelist() {
+    sendAdminRequest("whitelist/list", (data) => {
+        const enabled = data[0];
+        const users = data[1];
+        document.getElementById("enable").checked = enabled;
+
+        const fieldset = document.querySelector("#Settings fieldset");
+        fieldset.innerHTML = "";
+
+        users.forEach(user => {
+            const wrapper = document.createElement("div");
+            wrapper.style.margin = "4px 0";
+
+            const btn = document.createElement("button");
+            btn.innerText = "❌";
+            btn.style.marginLeft = "8px";
+            btn.onclick = () => removeUser(user);
+
+            const label = document.createElement("span");
+            label.textContent = user;
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(btn);
+            fieldset.appendChild(wrapper);
+        });
+    }, { get: true });
+}
+function toggleWhitelist(state) {
+    sendAdminRequest("whitelist/toggle", () => refreshWhitelist(), { body: { toggle: state } });
+}
+
+function addUser() {
+    const user = document.getElementById("whadduser").value.trim();
+    if (!user) return;
+    sendAdminRequest("whitelist/add", () => {
+        document.getElementById("whadduser").value = "";
+        refreshWhitelist();
+    }, { body: { user } });
+}
+
+function removeUser(user) {
+    sendAdminRequest("whitelist/remove", () => refreshWhitelist(), { body: { user } });
+}
+
+document.getElementById("enable").addEventListener("change", e => toggleWhitelist(e.target.checked));
+document.getElementById("whadduser").addEventListener("keydown", e => {
+    if (e.key === "Enter") addUser();
+});
+
+// initial load
+refreshWhitelist();
 

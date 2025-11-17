@@ -2866,13 +2866,14 @@ function init_ws() {
 			broadcast(encodeMsgpack({
 				online: onlineCount
 			}), ws);
-
+            delete clients[sdata.clientId];
 			if (sdata && sdata.isConnected) {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					rc: sdata.clientId
 				}), ws);
-				delete clients[sdata.clientId];
+				
 			}
+			
 
 			connObj[0]--;
 		});

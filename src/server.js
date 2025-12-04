@@ -1902,10 +1902,10 @@ function init_ws() {
 					}))
 					return;
 				}
-				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {send(ws, encodeMsgpack({
+				/*if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {send(ws, encodeMsgpack({
 						alert: "You are not authorized"
 					}))
-					return;}
+					return;}*/
 		
 
 				if (sdata.worldAttr.readonly && !sdata.isMember) return;
@@ -1958,12 +1958,12 @@ function init_ws() {
 
 				if (typeof message != "string") return;
 				if (message.length > 256) return;
-				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
+				/*if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
 					send(ws, encodeMsgpack({
 						msg: ["[SERVER]", 4, "You are not authorized", true]
 					}));
 					return;
-				}
+				}*/
 
 				var nick = sdata.clientId;
 				if (sdata.isAuthenticated) {
@@ -2389,12 +2389,12 @@ function init_ws() {
 				}
 			} else if ("register" == packetType) {
 				if (sdata.isAuthenticated) return;
-				if (!sdata.isAuthenticated) {
+				/*if (!sdata.isAuthenticated) {
 					send(ws, encodeMsgpack({
 						alert: "Registration is closed."
 					}));
 					return
-				}
+				}*/
 				var cred = data.register;
 
 				if (!Array.isArray(cred)) return;

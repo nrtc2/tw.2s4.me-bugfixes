@@ -1162,9 +1162,11 @@
                             , a = ce()
                             , o = Zr(n[3]);
                         pe = o[0],
+                            window.color = pe,
                             le(o[1]),
                             Vn(n[2], 0, !0) || Be.unshift(n),
                             pe = r,
+                            window.color = pe,
                             le(a)
                     }
                 },
@@ -1187,9 +1189,11 @@
                                             , a = ce()
                                             , o = Zr(t[3]);
                                         pe = o[0],
+                                            window.color = pe,
                                             le(o[1]),
                                             Vn(t[2], 1, !1) || Fe[e(343)](t),
                                             pe = n,
+                                            window.color = pe,
                                             le(a)
                                     }
                                 }(),
@@ -1922,7 +1926,7 @@
 
             let hue = 0;
             window.w = {};
-
+            window.position = qe;
             window.elem = tt;
             window.w.events = {};
             window.w.on = function (e, t) {
@@ -3079,6 +3083,7 @@
                 var r = document.getElementById(pe);
                 r[t(676)][t(627)](t(594)),
                     pe = e,
+                    window.color = pe,
                     be = xe && 0 == pe ? "rgba(255, 255, 255, 0.6)" : Yr(se[pe], .6),
                     (r = document[t(628)](pe))[t(676)][t(608)](t(594)),
                     r[t(214)] < w[t(403)] + 36 && (w[t(403)] = r[t(214)] - 36),

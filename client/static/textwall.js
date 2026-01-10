@@ -1112,39 +1112,51 @@
                     }
                 }
                 )),
+                w.moveCursor = function (direction, amount) {
+                    switch (direction) {
+                        case "up":
+                            Ce.y -= amount;
+                            break;
+                        case "down":
+                            Ce.y += amount;
+                            break;
+                        case "left":
+                            Ce.x -= amount;
+                            break;
+                        case "right":
+                            Ce.x += amount;
+                            break;
+                        default:
+                            throw "Invalid direction";
+                            break;
+                    }
+                    nr();
+                    ie(false);
+                    window.w.emit("cursormove", [Ce.x, Ce.y]);
+                };
                 i[n(216)](n(689), (function (e) {
                     var t = n;
                     if (e[t(294)]) {
                         switch (e[t(232)]) {
                             case 38:
-                                Ce.y -= 1,
-                                    nr(),
-                                    ie(!1),
-                                    e[t(423)]();
+                                w.moveCursor("up", 1);
+                                e.preventDefault();
                                 break;
                             case 40:
-                                Ce.y += 1,
-                                    nr(),
-                                    ie(!1),
-                                    e[t(423)]();
+                                w.moveCursor("down", 1);
+                                e.preventDefault();
                                 break;
                             case 37:
-                                Ce.x -= 1,
-                                    nr(),
-                                    ie(!1),
-                                    e.preventDefault();
+                                w.moveCursor("left", 1);
+                                e.preventDefault();
                                 break;
                             case 39:
-                                Ce.x += 1,
-                                    nr(),
-                                    ie(!1),
-                                    e[t(423)]();
+                                w.moveCursor("right", 1);
+                                e.preventDefault();
                                 break;
                             case 9:
-                                Ce.x += 3,
-                                    nr(),
-                                    ie(!1),
-                                    e.preventDefault();
+                                w.moveCursor("right", 3);
+                                e.preventDefault();
                                 break;
                             case 36:
                                 Ce.x = Ce[t(258)],

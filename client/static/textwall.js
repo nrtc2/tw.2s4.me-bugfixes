@@ -2027,13 +2027,13 @@
                     return;
                 }
 
-// /help
+                // /help
                 if (cmd === "help") {
                     send("/block <id|anon|user>, /blockuser <name>, /unblock <id|anon|user>, /unblockuser <name>, /unblockall, /day, /night, /help");
                     return;
                 }
             }
-        
+
             var channel = (typeof t == "number") ? (t === 1 ? "global" : "world") : t;
             var chatData = { msg: [e, channel] };
             window.w.emit("chatBefore", chatData);
@@ -3900,7 +3900,9 @@
                 Ce.y++,
                 Hn()
         }
-        null == navigator["clipboard"]["readText"] && (document["getElementById"]("paste").style["display"] = "none");
+        if (navigator.clipboard?.readText == null) {
+            document.getElementById("paste").style.display = "none";
+        };
         var lr = 0;
         function convertCSSToRGB(css) {
             const m = css.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
@@ -4662,7 +4664,7 @@
                         Mt(
                             (tt["anonymous"]["checked"] || je == "")
                                 ? (anonIdShow ? `(${window.w.clientId || 0})` : "")
-                                : (displayNameShow ? window.w.displayNick : je),
+                                : (displayNameShow ? (window.w.displayNick === "(none)" ? je : window.w.displayNick) : je),
                             y, g, o
                         )),
                     Je && $e["start"] && $e["end"]) {

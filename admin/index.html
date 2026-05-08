@@ -6,101 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel</title>
     <script src="admin.js" defer></script>
-    <style>
-        * {
-            font-family: monospace;
-        }
-
-        body {
-
-            margin: 20px;
-            background-color: rgb(0, 0, 0);
-            color: rgb(255, 255, 255);
-        }
-
-        input[type="file"],
-        button {
-            padding: 5px 10px;
-            border: none;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-
-        button:hover {
-            background-color: rgb(200, 200, 200);
-            cursor: pointer;
-        }
-
-        button:active {
-            background-color: #b9b9b9;
-        }
-
-        button:disabled {
-            color: white;
-            cursor: not-allowed;
-        }
-
-        a {
-            color: #7293ff;
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        #warning {
-            color: rgb(255, 136, 0)
-        }
-
-        .tabs {
-            display: flex;
-            border-bottom: 1px solid rgb(255, 255, 255);
-            flex-wrap: wrap;
-        }
-
-        .tab {
-            padding: 8px 16.6px;
-            cursor: pointer;
-            border: 1px solid rgb(255, 255, 255);
-            background-color: rgb(0, 0, 0);
-            margin-right: 2px;
-        }
-
-
-        .tab:hover {
-            background-color: #bbb;
-            /* gray on hover */
-        }
-
-        .not-allowed {
-            color: #909090;
-            cursor: not-allowed;
-        }
-
-        .tab.active {
-            font-weight: bolder;
-            background-color: rgb(105, 105, 105);
-        }
-
-
-        .tab-content {
-            overflow: auto;
-            background-color: rgb(20, 20, 20);
-            display: none;
-            padding: 20px;
-            border: 1px solid rgb(255, 255, 255);
-            height: 450px
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        tbody td {
-            padding: 8px 8px;
-        }
-    </style>
+    <link rel="stylesheet" href="admin.css">
 </head>
 
 <body>
@@ -111,60 +17,114 @@
         <div class="tab" data-tab="Connections">Connections</div>
         <div class="tab" data-tab="Starter-Scripts">Starter Scripts</div>
         <div class="tab" data-tab="Remote Scripts">Remote Scripts</div>
+        <div class="tab" data-tab="World Scripts">World Scripts</div>
         <div class="tab" data-tab="Accounts">Accounts</div>
         <div class="tab" data-tab="Worlds">Worlds</div>
         <div class="tab" data-tab="Notice">Notice</div>
+        <div class="tab" data-tab="Tags">Tags</div>
+        <div class="tab" data-tab="Packet Orchestrator">Packet Orchestrator</div>
+        <div class="tab" data-tab="Chat Logs">Chat Logs</div>
+        <div class="tab" data-tab="Tokens">Tokens</div>
+        <div class="tab" data-tab="User Manager">User Manager</div>
         <div class="tab" data-tab="Ratelimit">Ratelimit</div>
-        <div class="tab" data-tab="Actions">Actions</div>
+        <div class="tab" data-tab="Moderators">Moderators</div>
+        <div class="tab" data-tab="Server Info">Server Info</div>
+        <div class="tab" data-tab="Maintenance">Maintenance</div>
+        <div class="tab" data-tab="Bans">Bans</div>
     </div>
     <div class="tab-content" id="Settings">
-        <h3>Whitelist</h3>
-        <br>
-        A whitelist is a system that only accepts requests from allowed clients below in the whitelist.
-        <br>
-        <input type="checkbox" id="enable">Enable whitelist
-        <br/>
-        <br/>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Server Settings</h3>
+            <small style="color: #888;">Configure server-wide settings.</small>
+        </div>
+        <div class="box" style="background: #0a0a0a; padding: 15px; border: 1px solid #222;">
+            <div style="border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 5px;">
+                <h3 style="margin:0;">WHITELIST MANAGEMENT</h3>
+            </div>
 
-        Add users here:
-        <input type="text" id="whadduser">
-        <hr>
-        <fieldset id="users">
-            <legend>Whitelisted users</legend>
-            <!--the below, has buttons, and clicking them will remove them out of whitelist-->
-        </fieldset>
-        
+            <div
+                style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; background: #111; padding: 10px; border: 1px solid #222;">
+                <input type="checkbox" id="whitelistEnable" style="width: 16px; height: 16px; cursor: pointer;">
+                <label for="whitelistEnable" style="font-weight: bold; color: #ccc; cursor: pointer;">ENABLE WHITELIST
+                    MODE</label>
+                <span id="whitelistStatus" style="font-size: 11px; margin-left: auto; color: #555;">STATUS:
+                    INACTIVE</span>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <span style="color: #888; font-size: 11px; display: block; margin-bottom: 5px;">AUTHORIZE NEW
+                    USER:</span>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="whAddUserInput" placeholder="Enter username..." style="flex: 1;">
+                    <button id="whAddBtn" style="background: #1e5bb8; border-color: #fff;">AUTHORIZE</button>
+                </div>
+            </div>
+
+            <div style="border: 1px solid #222; background: #050505;">
+                <div
+                    style="background: #111; padding: 5px 10px; border-bottom: 1px solid #222; font-size: 11px; color: #7293ff; font-weight: bold;">
+                    WHITELISTED USERS REGISTRY
+                </div>
+                <div id="whUserList" style="padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; min-height: 50px;">
+                    <span style="color: #333; font-size: 11px;">NO USERS AUTHORIZED</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="box"
+            style="overflow: none !important; height: 110px; background: #0a0a0a; padding: 15px; border: 1px solid #222; margin-top: 20px;">
+            <div style="border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 5px;">
+                <h3 style="margin:0;">TEXTWALL SETTINGS</h3>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; gap: 5px;">
+                    <input type="checkbox" id="logToType" style="width: 16px; height: 16px; cursor: pointer;">
+                    <label for="logToType" style="font-weight: bold; color: #ccc; cursor: pointer;">LOG TO TYPE</label>
+                    <input type="checkbox" id="regclosed"
+                        style="width: 16px; height: 16px; cursor: pointer; margin-left: 20px;">
+                    <label for="regclosed" style="font-weight: bold; color: #ccc; cursor: pointer;">CLOSE
+                        REGISTRATION</label>
+                </div>
+            </div>
+        </div>
+
     </div>
     <div class="tab-content" id="Accounts">
-        <div class="controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
-            <input type="text" id="accSearchInput" placeholder="Search users..." style="padding:5px; flex:1;" />
-            <button id="accRefreshBtn"
-                style="padding:5px; background:#1e5bb8; color:#fff; border:2px solid #fff; cursor:pointer;">Refresh</button>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Accounts</h3>
+            <small style="color: #888;">View and manage user accounts.</small>
         </div>
-        <table id="accountsTable" border="1" cellspacing="0" cellpadding="5"
-            style="width:100%; border-collapse:collapse; background:#0c1a3c; color:#fff;">
+        <div class="controls">
+            <span style="color: #555; align-self: center;">QUERY:</span>
+            <input type="text" id="accSearchInput" placeholder="filter users..." style="flex:1;" />
+            <button id="accRefreshBtn">REFRESH</button>
+        </div>
+        <table id="accountsTable">
             <thead>
                 <tr>
                     <th>Username</th>
                     <th>ID</th>
                     <th>Online</th>
-                    <th>Where</th>
-                    <th>Date Joined</th>
+                    <th>Location</th>
+                    <th>Joined Date</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-        <div id="accPagination" style="margin-top:10px; display:flex; justify-content:center; gap:10px;"></div>
+        <div id="accPagination" style="display:flex; gap:10px;"></div>
     </div>
 
     <div class="tab-content" id="Connections">
-        <div class="controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
-            <input type="text" id="connSearchInput" placeholder="Search connections..." style="padding:5px; flex:1;" />
-            <button id="connRefreshBtn"
-                style="padding:5px; background:#1e5bb8; color:#fff; border:2px solid #fff; cursor:pointer;">Refresh</button>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Connections</h3>
+            <small style="color: #888;">View and manage active connections.</small>
         </div>
-        <table id="connectionsTable" border="1" cellspacing="0" cellpadding="5"
-            style="width:100%; border-collapse:collapse; background:#0c1a3c; color:#fff;">
+        <div class="controls">
+            <span style="color: #555; align-self: center;">CONNECTIONS:</span>
+            <input type="text" id="connSearchInput" placeholder="filter connections..." style="flex:1;" />
+            <button id="connRefreshBtn">REFRESH</button>
+        </div>
+        <table id="connectionsTable">
             <thead>
                 <tr>
                     <th>Username</th>
@@ -174,59 +134,75 @@
                     <th>Worlds</th>
                     <th>XY</th>
                     <th>Anonymous</th>
-                    <th>Date Connected</th>
+                    <th>Last Connected</th>
                     <th>Color</th>
                     <th>Where</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-        <div id="connPagination" style="margin-top:10px; display:flex; justify-content:center; gap:10px;"></div>
+        <div id="connPagination" style="display:flex; gap:10px;"></div>
     </div>
 
     <div class="tab-content" id="Worlds">
-        <div class="controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
-            <input type="text" id="worldSearchInput" placeholder="Search worlds..." style="padding:5px; flex:1;" />
-            <button id="worldRefreshBtn"
-                style="padding:5px; background:#1e5bb8; color:#fff; border:2px solid #fff; cursor:pointer;">Refresh</button>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Worlds</h3>
+            <small style="color: #888;">View and manage the worlds.</small>
         </div>
-        <table id="worldsTable" border="1" cellspacing="0" cellpadding="5"
-            style="width:100%; border-collapse:collapse; background:#0c1a3c; color:#fff;">
+        <div class="controls">
+            <span style="color: #555; align-self: center;">SEARCH:</span>
+            <input type="text" id="worldSearchInput" placeholder="filter worlds..." style="flex:1;" />
+            <button id="worldRefreshBtn">REFRESH</button>
+        </div>
+        <table id="worldsTable">
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Namespace</th>
                     <th>Name</th>
-                    <th>Link</th>
+                    <th>Namespace</th>
+                    <th>Access Link</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-        <div id="worldPagination" style="margin-top:10px; display:flex; justify-content:center; gap:10px;"></div>
+        <div id="worldPagination" style="display:flex; gap:10px;"></div>
     </div>
+
     <div class="tab-content" id="Remote Scripts">
-        <div style="margin-bottom:10px;">
-            <label for="targetId">Target user:</label>
-            <select id="targetId">
-                <option value="">-- Select Target --</option>
-                <option value="all">Broadcast</option>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Remote Scripts</h3>
+            <small style="color: #888;">Execute scripts on remote clients.</small>
+        </div>
+        <div
+            style="margin-bottom:10px; background: #0a0a0a; padding: 5px; border: 1px solid #222; display: flex; gap: 10px; align-items: center;">
+            <label for="targetId" style="color: #888; font-size: 11px;">TARGET:</label>
+            <select id="targetId" style="flex: 1;">
+                <option value="">-- NO TARGET --</option>
+                <option value="all">BROADCAST</option>
             </select>
         </div>
 
-        <div id="remoteEditor" style="height:300px; border:1px solid #ccc;"></div>
+        <div id="remoteEditor" style="height:320px;"></div>
 
-        <div style="margin-top:10px;">
-            <button id="executeScript">Execute</button>
-            <button id="clearScript">Clear</button>
-            <button id="loadScript">Load</button>
-            <button id="saveScript">Save</button>
-            <input type="file" id="fileInput" accept=".js,.txt" style="display:inline-block;">
+        <div style="margin-top:10px; display: flex; gap: 5px;">
+            <button id="executeScript" style="background: #1e5bb8; border-color: #fff;">EXECUTE</button>
+            <button id="clearScript">WIPE</button>
+            <button id="loadScript">IMPORT</button>
+            <button id="saveScript">EXPORT</button>
+            <input type="file" id="fileInput" accept=".js,.txt" style="display:none;">
+            <button onclick="document.getElementById('fileInput').click()" style="color: #7293ff;">BROWSE...</button>
         </div>
 
-        <div id="remoteStatus" style="margin-top:10px; color:green;"></div>
+        <div id="remoteStatus"
+            style="margin-top:10px; color:#0f0; font-size: 11px; border-top: 1px solid #111; padding-top: 5px;">
+            Ready for remote script execution.
+        </div>
     </div>
     <div class="tab-content active" id="Home">
-        <h2>Home</h2>
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">HOME</h3>
+            <small style="color: #888;">Welcome to the Admin Panel</small>
+        </div>
         <p>Welcome, <span id="usr">???</span></p>
         <br>
         <span id="warning">Use this panel responsibly. Every action here affects accounts, scripts, server settings, and
@@ -235,14 +211,11 @@
         <br>
         <br>
         <br>
-        This admin panel allows you to manage settings, monitor active and past connections, execute and schedule
-        scripts, control user accounts and permissions, track records and system logs, oversee worlds, handle
-        notices and alerts, manage rate-limits for scripts and actions, review historical data, and perform
-        administrative actions with full system access. All of these operations are centralized in one interface to
-        streamline management, provide full oversight, and ensure efficiency while maintaining control over critical
-        server functions.
+        This centralized command center provides comprehensive oversight of your digital ecosystem.
+        Version 1.0.1 introduces improved stability for managing real-time connections, executing
+        advanced remote scripts, and overseeing world-state parameters. Use the tabs above to
+        navigate between user management, system diagnostics, and script orchestration tools.
 
-        (This panel is WIP, some features are not implemented yet)
         <br>
         <br>
         <hr>
@@ -255,8 +228,453 @@
         <br>
         <br>
         <br>
-        Version: 1.0.0 Alpha
+        Version: 1.0.1
 
+    </div>
+
+    <div class="tab-content" id="Starter-Scripts">
+        <div
+            style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: #111; padding: 10px; border: 1px solid #333;">
+            <label>File:</label>
+            <input type="text" id="scriptFilename" placeholder="path/to/script.js"
+                style="flex: 1; background: #000; color: #0f0; border: 1px solid #444; padding: 5px; font-family: monospace;">
+            <button id="saveStarterBtn" style="background: #1e5bb8; color: white;">Save</button>
+            <button id="clearStarterBtn" style="background: #444; color: white;">Clear</button>
+        </div>
+
+        <div style="display: flex; gap: 0; height: calc(100% - 60px); border: 1px solid #333;">
+            <div id="explorerSidebar"
+                style="width: 250px; background: #0a0a0a; border-right: 1px solid #333; display: flex; flex-direction: column;">
+                <div
+                    style="padding: 8px; border-bottom: 1px solid #222; font-size: 12px; color: #888; display: flex; justify-content: space-between;">
+                    <span>EXPLORER</span>
+                    <span id="newScriptBtn" style="cursor:pointer; color:#fff;" title="New File">+</span>
+                </div>
+                <div id="fileList" style="flex: 1; overflow: auto; padding: 5px;">
+                </div>
+            </div>
+
+            <div id="starterEditorContainer" style="flex: 1; background: #1e1e1e; position: relative;">
+                <div id="starterEditor" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+            </div>
+
+            <hr>
+            <span id="starterStatus" style="margin-top:10px; color:green;"></span>
+        </div>
+    </div>
+    <div class="tab-content" id="Notice">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Server-Wide Announcement</h3>
+            <small style="color: #888;">Broadcast an alert to all active users across all worlds.</small>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            <textarea id="noticeInput" rows="6" placeholder="Type your announcement here..."
+                style="width:90%; background:#050505; color:#0f0; border:1px solid #333; padding:10px; font-family:monospace; outline: none; resize: vertical;"></textarea>
+
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="noticeSubmit"
+                    style="background: #1e5bb8; color: white; padding: 8px 20px; font-weight: bold;">
+                    SEND BROADCAST
+                </button>
+                <button id="noticeClear" style="background: #333; color: #ccc;">Clear</button>
+                <span id="noticeStatus" style="font-weight: bold;"></span>
+            </div>
+        </div>
+
+        <hr style="margin: 25px 0; border: 0; border-top: 1px solid #222;">
+
+        <div>
+            <h4 style="color: #666; margin-bottom: 10px;">Recent Announcements</h4>
+            <div id="noticeHistory" style="font-size: 12px; color: #444;">
+                No recent history.
+            </div>
+        </div>
+    </div>
+    <div class="tab-content" id="Tags">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Metadata Tag Registry</h3>
+            <small style="color: #888;">Manage custom tags for user accounts.</small>
+        </div>
+
+        <div
+            style="display: flex; gap: 5px; align-items: center; margin-bottom: 20px; background: #0a0a0a; padding: 10px; border: 1px solid #222;">
+            <span style="color: #555; font-size: 11px;">REGISTER:</span>
+            <input type="text" id="newAccountInput" placeholder="Account username..." style="flex: 1;">
+            <input type="text" id="newTagInput" placeholder="Tag label..." style="flex: 1;">
+
+            <span id="tagchk" style="color: #ff5555; font-size: 11px; min-width: 80px;"></span>
+
+            <button id="addTagBtn" style="background: #1e5bb8; border-color: #fff;">REGISTER TAG</button>
+            <button id="refreshTagsBtn">REFRESH</button>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <span style="color: #7293ff; font-size: 11px; font-weight: bold;">[ REGISTERED TAGS INDEX ]</span>
+            <table id="tagsTable" style="margin-top: 8px;">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th style="width: 50%">Tag</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="3" style="text-align: center; color: #444;">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div id="tagPaginationDiv" style="display:flex; gap:10px; margin-top:10px;"></div>
+        </div>
+    </div>
+    <div class="tab-content" id="Packet Orchestrator">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Packet Orchestrator</h3>
+            <small style="color: #888;">Craft and send custom packets to clients.</small>
+        </div>
+
+        <div
+            style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px; background: #0a0a0a; padding: 10px; border: 1px solid #222;">
+            <span style="color: #555; font-size: 11px;">TARGET:</span>
+            <select id="packetTargetId" style="flex: 1;">
+                <option value="">-- SELECT TARGET --</option>
+                <option value="broadcast">BROADCAST</option>
+            </select>
+            <button id="sendPacketBtn" style="background: #1e5bb8; border-color: #fff;">SEND PACKET</button>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <span style="color: #7293ff; font-size: 11px; font-weight: bold;">[ PACKET PAYLOAD ]</span>
+            <textarea id="packetPayloadInput" rows="8"
+                placeholder='Enter packet payload as JSON array, e.g. ["data1", "data2"]'
+                style='width:100%; background:#050505; color:#0f0; border:1px solid #333; padding:10px; font-family:monospace; outline:none; resize:vertical; margin-top:5px;'></textarea>
+        </div>
+
+        <div id="packetStatus" style="margin-top:10px; font-weight:bold;"></div>
+    </div>
+    <div class="tab-content" id="Chat Logs">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Chat Logs</h3>
+            <small style="color: #888;">View and search through chat logs from all worlds.</small>
+        </div>
+
+        <div class="controls" style="border-bottom: 1px solid #333;">
+            <span style="color: #555; align-self: center;">SEARCH:</span>
+            <input type="text" id="chatLogSearchInput" placeholder="filter chat logs..." style="flex:1;" />
+            <button id="chatLogRefreshBtn">REFRESH</button>
+        </div>
+
+        <div id="chatLogsContainer"></div>
+        <div id="chatLogPagination" style="display:flex; gap:10px; margin-top:10px;"></div>
+    </div>
+    <div class="tab-content" id="Tokens">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Authentication Tokens</h3>
+            <small style="color: #888;">Manage account tokens for authentication purposes.</small>
+        </div>
+        <div style="margin-top: 10px;">
+            <span style="color: #7293ff; font-size: 11px; font-weight: bold;">[ ACTIVE TOKENS ]</span>
+            <table id="tokensTable" style="margin-top: 8px;">
+                <thead>
+                    <tr>
+                        <th>Token</th>
+                        <th>Account</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #444;">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="tokenPagination" style="margin-top: 15px; display: flex; gap: 10px; align-items: center;"></div>
+    </div>
+    <div class="tab-content" id="User Manager">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">User Manager</h3>
+            <small style="color: #888;">Create, modify, and delete user accounts.</small>
+        </div>
+
+        <!-- ACCOUNT CREATION SECTION -->
+        <div
+            style="display: flex; gap: 5px; align-items: center; margin-bottom: 20px; background: #0a0a0a; padding: 10px; border: 1px solid #222;">
+            <span style="color: #555; font-size: 11px;">USERNAME:</span>
+            <input type="text" id="umUsernameInput" placeholder="New username..." style="flex: 1;">
+            <span style="color: #555; font-size: 11px;">PASSWORD:</span>
+            <input type="text" id="umPasswordInput" placeholder="New password..." style="flex: 1;">
+            <button id="createUserBtn"
+                style="background: #1e5bb8; border-color: #fff; color: white; cursor: pointer;">CREATE USER</button>
+        </div>
+        <div style="margin: 10px 0; display: flex; gap: 8px; align-items: center;">
+            <span style="color: #7293ff; font-size: 11px; font-weight: bold;">[ SEARCH ]</span>
+            <input type="text" id="userSearchInput" placeholder="Filter by name..." style="flex: 1; padding: 4px;"
+                onkeyup="if(event.key === 'Enter') performUserSearch()">
+            <button onclick="performUserSearch()" style="padding: 4px 10px; cursor: pointer;">Find</button>
+        </div>
+        <table id="userAccountsTable" style="margin-top: 8px; width: 100%;">
+            <thead>
+                <tr>
+                    <th style="text-align: left;">Username</th>
+                    <th style="text-align: left; width: 150px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="2" style="text-align: center; color: #444;">Loading users...</td>
+                </tr>
+            </tbody>
+        </table>
+        <div id="userPagination" style="margin-top: 15px; display: flex; gap: 10px; align-items: center;"></div>
+    </div>
+    <div class="tab-content" id="Ratelimit">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Ratelimit Management</h3>
+            <small style="color: #888;">View and adjust ratelimits for various actions.</small>
+        </div>
+
+
+        <div class="box" style="background: #0a0a0a; padding: 15px; border: 1px solid #222;">
+            <input type="checkbox" id="enableRatelimit" style="width: 16px; height: 16px; cursor: pointer;">
+            <label for="enableRatelimit" style="font-weight: bold; color: #ccc; cursor: pointer;">ENABLE
+                RATELIMITS</label>
+
+
+            <table id="ratelimitTable">
+                <thead>
+                    <tr>
+                        <th>Packet</th>
+                        <th>Current Limit</th>
+                        <th>Adjust Limit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Dynamically populated -->
+                </tbody>
+            </table>
+
+        </div>
+    </div>
+
+    <div class="tab-content" id="Moderators">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Moderator Management</h3>
+            <small style="color: #888;">Assign or revoke moderator privileges to user accounts.</small>
+        </div>
+
+        <div
+            style="display: flex; gap: 5px; align-items: center; margin-bottom: 20px; background: #0a0a0a; padding: 10px; border: 1px solid #222;">
+            <span style="color: #555; font-size: 11px;">USERNAME:</span>
+            <input type="text" id="modUsernameInput" placeholder="Enter username..." style="flex: 1;">
+            <button id="addModBtn" style="background: #1e5bb8; border-color: #fff;">ADD MODERATOR</button>
+            <button id="removeModBtn" style="background: #333; color: #ccc;">REMOVE MODERATOR</button>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <span style="color: #7293ff; font-size: 11px; font-weight: bold;">[ CURRENT MODERATORS ]</span>
+            <table id="moderatorsTable" style="margin-top: 8px;">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Dynamically populated -->
+                </tbody>
+            </table>
+
+        </div>
+
+    </div>
+
+    <div class="tab-content" id="Server Info">
+        <div style="border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 5px;">
+            <h3 style="margin:0;">SYSTEM DIAGNOSTICS</h3>
+        </div>
+
+        <div
+            style="display: flex; gap: 40px; align-items: center; justify-content: center; background: #0a0a0a; padding: 20px; border: 1px solid #222;">
+            <div style="text-align: center;">
+                <div id="cpuGraph" data-graph="cpu" style="height: 110px; width: 50px;">
+                    <segment data-order="10"></segment>
+                    <segment data-order="9"></segment>
+                    <segment data-order="8"></segment>
+                    <segment data-order="7"></segment>
+                    <segment data-order="6"></segment>
+                    <segment data-order="5"></segment>
+                    <segment data-order="4"></segment>
+                    <segment data-order="3"></segment>
+                    <segment data-order="2"></segment>
+                    <segment data-order="1"></segment>
+                </div>
+                <div style="font-size: 10px; margin-top: 8px; color: #ff8800;">CPU: <span id="cpuLoadText">0%</span>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <div id="ramGraph" data-graph="ram" style="height: 110px; width: 50px;">
+                    <segment data-order="10"></segment>
+                    <segment data-order="9"></segment>
+                    <segment data-order="8"></segment>
+                    <segment data-order="7"></segment>
+                    <segment data-order="6"></segment>
+                    <segment data-order="5"></segment>
+                    <segment data-order="4"></segment>
+                    <segment data-order="3"></segment>
+                    <segment data-order="2"></segment>
+                    <segment data-order="1"></segment>
+                </div>
+                <div style="font-size: 10px; margin-top: 8px; color: #7293ff;">RAM: <span id="ramLoadText">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div style="border: 1px solid #222; padding: 10px; background: #050505;">
+                <span style="color: #555; font-size: 10px; font-weight: bold;">HARDWARE SPECS</span>
+                <hr style="border-top: 1px solid #111;">
+                <div id="hwSpecs" style="font-size: 11px; line-height: 1.6; color: #aaa;">
+                    CPU: <span style="color:#eee">Detecting...</span><br>
+                    CPU CORES: <span style="color:#eee">Detecting...</span><br>
+                    RAM: <span style="color:#eee">Detecting...</span><br>
+                </div>
+            </div>
+            <div style="border: 1px solid #222; padding: 10px; background: #050505;">
+                <span style="color: #555; font-size: 10px; font-weight: bold;">SOFTWARE STATUS</span>
+                <hr style="border-top: 1px solid #111;">
+                <div id="swStatus" style="font-size: 11px; line-height: 1.6; color: #aaa;">
+                    VERSION: <span style="color:#eee" id="serverVersion">1.0.1</span><br>
+                    UPTIME: <span style="color:#eee" id="uptimeText">00:00:00</span><br>
+                    NODE: <span style="color:#eee" id="nodeVersion">LTS_v20.x</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="tab-content" id="Maintenance">
+        <div style="margin-bottom: 15px; border-left: 4px solid #1e5bb8; padding-left: 15px;">
+            <h3 style="margin: 0;">Maintenance Mode</h3>
+            <small style="color: #888;">Enable maintenance mode to restrict access during updates or critical
+                fixes.</small>
+        </div>
+
+        <div
+            style="display: flex; align-items: center; gap: 10px; background: #0a0a0a; padding: 10px; border: 1px solid #222;">
+            <input type="checkbox" id="maintenanceToggle" style="width: 16px; height: 16px; cursor: pointer;">
+            <label for="maintenanceToggle" style="font-weight: bold; color: #ccc; cursor: pointer;">ENABLE MAINTENANCE
+                MODE</label>
+            <span id="maintenanceStatus" style="font-size: 11px; margin-left: auto; color: #555;">STATUS:
+                INACTIVE</span>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <span style="color: #888; font-size: 11px;">MAINTENANCE MESSAGE:</span>
+            <textarea id="maintenanceMessageInput" rows="4" placeholder="Enter maintenance message for users..."
+                style="width:100%; background:#050505; color:#0f0; border:1px solid #333; padding:10px; font-family:monospace; outline:none; resize:vertical;"></textarea>
+            <button id="saveMaintenanceMessageBtn" style="margin-top: 10px; background: #1e5bb8; color: white;">SAVE
+                MESSAGE</button>
+        </div>
+
+    </div>
+
+    <div class="tab-content" id="World Scripts">
+        <span>Currently broken. it will be finished in v3.1</span>
+        <div
+            style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: #111; padding: 10px; border: 1px solid #333;">
+            <label>World:</label>
+            <input type="text" id="scriptWorldname" placeholder="~name/namespace"
+                style="flex: 1; background: #000; color: #0f0; border: 1px solid #444; padding: 5px; font-family: monospace;">
+            <button id="saveWorldBtn" style="background: #1e5bb8; color: white;">Save</button>
+            <button id="clearWorldBtn" style="background: #444; color: white;">Clear</button>
+        </div>
+
+        <div style="display: flex; gap: 0; height: calc(100% - 60px); border: 1px solid #333;">
+            <div id="worldsSidebar"
+                style="width: 250px; background: #0a0a0a; border-right: 1px solid #333; display: flex; flex-direction: column;">
+                <div
+                    style="padding: 8px; border-bottom: 1px solid #222; font-size: 12px; color: #888; display: flex; justify-content: space-between;">
+                    <span>WORLDS</span>
+                    <span id="newWorldScriptBtn" style="cursor:pointer; color:#fff;" title="New File">+</span>
+                </div>
+                <div id="worldList" style="flex: 1; overflow: auto; padding: 5px;">
+                </div>
+            </div>
+
+            <div id="worldEditorContainer" style="flex: 1; background: #1e1e1e; position: relative;">
+                <div id="worldEditor" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+            </div>
+
+            <hr>
+            <span id="worldStatus" style="margin-top:10px; color:green;"></span>
+        </div>
+
+    </div>
+    <div class="tab-content" id="Bans">
+        <div style="margin-bottom: 15px; border-left: 4px solid #b81e1e; padding-left: 15px;">
+            <h3 style="margin: 0;">Ban Management</h3>
+            <small style="color: #888;">Restrict access for specific accounts or IP addresses.</small>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+            <div style="background: #0a0a0a; border: 1px solid #222; padding: 10px; text-align: center;">
+                <span style="color: #555; font-size: 10px; display: block; margin-bottom: 5px;">ACCOUNT BANS</span>
+                <span id="accountBanCount" style="color: #ff5555; font-size: 18px; font-weight: bold; font-family: monospace;">0</span>
+            </div>
+            <div style="background: #0a0a0a; border: 1px solid #222; padding: 10px; text-align: center;">
+                <span style="color: #555; font-size: 10px; display: block; margin-bottom: 5px;">ACTIVE IP BANS</span>
+                <span id="ipBanCount" style="color: #ff5555; font-size: 18px; font-weight: bold; font-family: monospace;">0</span>
+            </div>
+        </div>
+
+        <div class="box" style="background: #0a0a0a; padding: 15px; border: 1px solid #222; margin-bottom: 20px; height: auto">
+            <div style="border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 5px; display: flex; justify-content: space-between;">
+                <h3 style="margin:0; font-size: 12px; color: #7293ff;">ISSUE RESTRICTION</h3>
+                <span id="banStatus" style="font-size: 10px; color: #555;">READY</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="banInput" placeholder="Target Username or IP Address..." style="width: 100%;">
+                <select id="banActionType" style="width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 5px;">
+                    <option value="account">Account Ban</option>
+                    <option value="ip">IP Ban</option>
+                </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <input type="text" id="banReasonInput" placeholder="Reason (e.g. Exploiting, Spamming)..." style="width: 100%;">
+                <input type="number" id="banExpiryInput" placeholder="Expiry (Timestamp/0)" style="width: 100%;">
+            </div>
+
+            <button id="execBanBtn" style="background: #b81e1e; color: white; width: 100%; font-weight: bold; border-color: #ff5555; padding: 10px;">
+                EXECUTE TERMINATION
+            </button>
+        </div>
+
+        <div style="border: 1px solid #222; background: #050505;">
+            <div style="background: #111; padding: 8px 10px; border-bottom: 1px solid #222; font-size: 11px; color: #7293ff; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+                <span>ACTIVE BAN REGISTRY</span>
+                <button id="refreshBansBtn" style="font-size: 9px; background: #222; border: 1px solid #444;">SYNC DATABASE</button>
+            </div>
+            <table id="bansTable">
+                <thead>
+                    <tr>
+                        <th>Username / Identifier</th>
+                        <th style="width: 100px; text-align: center;">Account Ban</th>
+                        <th style="width: 100px; text-align: center;">IP-Ban</th>
+                        <th>Reason</th>
+                        <th style="width: 80px; text-align: center;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="bansTableBody">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #333; padding: 20px;">Fetching ban registry...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="banPagination" style="display:flex; gap:10px; margin-top: 10px;"></div>
     </div>
     <span id="chk"></span>
     <script>
@@ -277,46 +695,9 @@
     <script>
         var t = localStorage.getItem("usr") ?? "???"
         document.getElementById("usr").textContent = t
-        async function checkAdmin() {
-            try {
-                const checkResponse = await fetch('/admin/check', {
-                    method: 'POST',
-                    credentials: 'include', // in case cookies are used
-                });
-                const checkData = await checkResponse.json();
-                if (!checkData.authenticated) {
-                    const username = prompt("Enter username:");
-                    const password = prompt("Enter password:");
 
-                    if (!username || !password) {
-                        alert("Credentials required!");
-                        return;
-                    }
 
-                    const credResponse = await fetch('/admin/credentials', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ username, password }),
-                        credentials: 'include'
-                    });
 
-                    const credData = await credResponse.json();
-
-                    if (credData.success) {
-                        t = username
-                        localStorage.setItem("usr", username)
-                    } else {
-                        alert("Login failed! Wrong credentials.");
-                    }
-                }
-
-            } catch (err) {
-                console.error("Error checking admin:", err);
-            }
-        }
-        checkAdmin();
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.43.0/min/vs/loader.min.js"></script>
 </body>

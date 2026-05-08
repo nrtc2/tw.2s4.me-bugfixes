@@ -17,279 +17,481 @@
 	<meta property="og:url" content="https://textwall.cc/">
 	<meta property="og:image" content="/static/icons/icon.gif">
 	<link rel="stylesheet" href="/static/textwall.css">
+	<script src="/static/jscolor.min.js" defer></script>
 </head>
 
-<body>
+<body class="">
 	<textarea id="clipboard"></textarea>
 	<textarea id="textarea" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
 	<div class="container">
 		<div id="toast"></div>
 		<div id="teleport">
-			<div id="closeteleport">
-				<img alt="cancel" src="/static/cancel.svg">
-			</div>
-			<span class="tptitle">Teleport</span>
-			<form>
-				<label for="tpword">Where would you like to go?</label>
-				<input id="tpword" maxlength="250" type="text">
-				<input type="submit" id="tpwordgo" value="Go">
-			</form>
-			<div id="walllist"></div>
-			<hr>
-			<form class="coordinput">
-				<div>
-					<label for="tpx">X:</label>
-					<input id="tpx" value="0" type="number"><br>
-					<label for="tpy">Y:</label>
-					<input id="tpy" value="0" type="number">
-					<input type="submit" id="tpcoordgo" value="Go">
+			<div class="tpheader">
+				<div id="closeteleport" class="tpbutton">
+					<img alt="cancel" class="nohover" src="/static/cancel.svg">
 				</div>
-			</form>
+				Teleport
+			</div>
+			<div class="tpcontent">
+				<form>
+					<label for="tpword">Where would you like to go?</label>
+					<input id="tpword" maxlength="250" type="text">
+					<input type="submit" id="tpwordgo" value="Go">
+				</form>
+				<div id="walllist"></div>
+
+				<form class="coordinput">
+					<div>
+						<label for="tpx">X:</label>
+						<input id="tpx" value="0" type="number"><br>
+						<label for="tpy">Y:</label>
+						<input id="tpy" value="0" type="number">
+						<input type="submit" id="tpcoordgo" value="Go">
+					</div>
+				</form>
+			</div>
 		</div>
 	</div>
+
+
 	<div id="chat" class="hidden">
 		<div class="buttoncontainer">
-			<div id="chatbutton">
-				<img alt="chat" class="button" src="/static/chat.svg">
+			<div id="chatbutton"> <img alt="chat" class="button nohover" src="/static/chat.svg">
 				<div id="unread"></div>
 			</div>
 		</div>
 		<div class="chatcontainer">
-			<div id="chatbox"></div>
+			<div class="mock-fieldset">
+				<div class="channelbar">
+					<button class="channel-btn active" data-channel="world">This wall <span class="badge"
+							data-badge="world"></span></button>
+					<button class="channel-btn" data-channel="global">Global <span class="badge"
+							data-badge="global">1</span></button>
+				</div>
+				<div id="stacker">
+
+					<div id="chatbox-world" class="chatbox active" data-channel="world"></div>
+					<div id="chatbox-global" class="chatbox" data-channel="global"></div>
+
+				</div>
+
+			</div>
+
+
+			<div id="typing-world" class="typing-notice active" data-channel="world">nobody is typing.</div>
+			<div id="typing-global" class="typing-notice" data-channel="global">nobody is typing.</div>
 			<div class="msgcontainer">
-				<input maxlength="180" type="text" title="type a message" id="chatmsg">
-				<img alt="send" id="sendmsg" class="button" src="/static/send.svg">
+				<input maxlength="255" type="text" title="type a message" id="chatmsg" autocomplete="off">
+				<img alt="send" id="sendmsg" class="button" src="/static/send.svg" role="button">
 			</div>
+
 		</div>
 	</div>
-	<div id="usermenu" class="hidden">
-		<div id="optionsmenu">
-			<h1>Options</h1>
-			<input id="showothercurs" type="checkbox">
-			<label for="showothercurs">Show other cursors</label><br>
 
-			<input id="shownametags" type="checkbox">
-			<label for="shownametags">Show name tags</label><br>
-
-			<input id="showchat" type="checkbox">
-			<label for="showchat">Show chat</label><br>
-
-			<input id="disablecolour" type="checkbox">
-			<label for="disablecolour">Disable color</label><br>
-
-			<input id="smoothpanning" type="checkbox">
-			<label for="smoothpanning">Smooth panning</label><br>
-
-			<input id="smoothcursors" type="checkbox">
-			<label for="smoothcursors">Smooth cursors</label><br>
-
-			<input id="copycolour" type="checkbox">
-			<label for="copycolour">Copy colors</label><br>
-
-			<input id="copydecorations" type="checkbox">
-			<label for="copydecorations">Copy decorations</label><br>
-
-			<input id="rainbow" type="checkbox">
-			<label for="rainbow">Rainbow text</label><br>
-
-			<input type="checkbox" id="darkChat">
-			<label for="darkChat">Dark chat</label><br>
-
-			<input type="checkbox" id="rainbowTag">
-			<label for="rainbowTag">Show rainbow tag animation</label><br>
-
-			<input type="checkbox" id="anonIdShow">
-			<label for="anonIdShow">Show anonymous IDs</label><br>
-
-			<input type="checkbox" id="fps">
-			<label for="showFPS">Show FPS</label><br>
-
-			<input type="checkbox" id="showFeedback">
-			<label for="showFeedback">Show typing feedback</label><br><br>
-			<button id="clearChat">
-				<label for="clearChat">Clear chats</label>
-			</button>
-			<br />
-			<br />
-			<label for="zoom">Zoom: </label><input type="range" min="5" max="30" value="10" id="zoom"><br><br>
-			<div>
-				<span style="color: #ffff00"> WARNING: </span>
-				<span> Some of the fonts are low quality!</span>
-			</div>
-			<br>
-			<label for="fontselect">Font: </label><select id="fontselect"></select><br>
-			<fieldset id="fontmenu" class="hidden">
-				<legend>Custom Font</legend>
-				<label for="customfont">Name:</label><input id="customfont" type="text"><br>
-				<label for="customfontsize">Size:</label><input id="customfontsize" type="number" min="1" max="20"
-					value="20"><br>
-			</fieldset>
-			<fieldset id="thememenu" class="hidden">
-				<legend>Custom Theme</legend>
-				<label for="primary">Primary:</label><input id="primary" type="color" value="#FFFCE5"><br>
-				<label for="secondary">Secondary:</label><input id="secondary" type="color" value="#FBFFBD"><br>
-				<input id="themetext" type="checkbox"><label for="themetext">White text</label>
-			</fieldset>
-			<form id="login">
-				<h3>Log in</h3>
-				<label for="loginname">Username</label><br>
-				<input id="loginname" autocomplete="username" type="text" maxlength="24" minlength="1"><br>
-				<label for="loginpass">Password</label><br>
-				<input id="loginpass" type="password" autocomplete="current-password" maxlength="64" minlength="1">
-				<input type="submit" id="loginbtn" value="Go"><br>
-				<span class="buttonlink" id="registerlink">Register</span>
-			</form>
-			<form id="register">
-				<h3>Register</h3>
-				<label for="username">Username</label><br>
-				<input id="username" autocomplete="username" type="text" maxlength="24" minlength="1"><br>
-				<label for="password">Password<small> (don't forget it)</small></label><br>
-				<input id="password" type="password" autocomplete="new-password" maxlength="64" minlength="1"><br>
-				<label for="password2">Password again</label><br>
-				<input id="password2" type="password" autocomplete="new-password" maxlength="64" minlength="1">
-				<input type="submit" id="registerbtn" value="Go"><br>
-				<span class="buttonlink" id="loginlink">Log in</span>
-			</form>
-			<div id="loggedin">
-				<p>Logged in as <a id="name" class="buttonlink"></a></p>
-				<input id="anonymous" type="checkbox"><label for="anonymous">Anonymous</label><br>
-				<span class="buttonlink" id="logoutlink">Log out</span>
-				<span class="buttonlink" id="accsettinglink">Account settings</span>
-				<div id="accountsettings">
-					<h3>Account settings</h3>
-					<form id="changenameform">
-						<fieldset>
-							<legend>Change username</legend>
-							<label for="chngusername">New Username</label><br>
-							<input id="chngusername" type="text" autocomplete="username" maxlength="24"
-								minlength="1"><br>
-							<label for="chngeusrpass">Password</label><br>
-							<input id="chngeusrpass" autocomplete="new-password" type="password" maxlength="64"
-								minlength="1"><br>
-							<input type="submit" id="submitnamechange" value="Change username">
-						</fieldset>
-					</form>
-					<form id="changepassform">
-						<fieldset>
-							<legend>Change password</legend>
-							<input type="text" autocomplete="username" style="display: none;">
-							<label for="oldpass">Old password</label><br>
-							<input id="oldpass" type="password" autocomplete="new-password" maxlength="64"
-								minlength="1"><br>
-							<label for="newpass">New password</label><br>
-							<input id="newpass" autocomplete="new-password" type="password" maxlength="64"
-								minlength="1"><br>
-							<label for="newpass2">New password again</label><br>
-							<input id="newpass2" autocomplete="new-password" type="password" maxlength="64"
-								minlength="1"><br>
-							<input type="submit" id="submitpasschange" value="Change password">
-						</fieldset>
-					</form>
-					<form id="delaccountform">
-						<fieldset>
-							<legend>Delete account</legend>
-							<input type="text" autocomplete="username" style="display: none;">
-							<label for="deletepassword">Password</label><br>
-							<input id="deletepassword" autocomplete="new-password" type="password" maxlength="64"
-								minlength="1"><br>
-							<input type="submit" id="deleteaccount" value="Delete account">
-						</fieldset>
-					</form>
-				</div>
-			</div>
-			<div id="wallsettings">
-				<h1>Wall Settings</h1>
-				<input id="protect" type="checkbox"><label for="protect">Protect</label><br>
-				<input id="clear" type="checkbox"><label for="clear">Clear</label><br>
-				<input id="readonly" type="checkbox"><label for="readonly">Read-only</label><br>
-				<input id="private" type="checkbox"><label for="private">Private</label><br>
-				<input id="hidecursors" type="checkbox"><label for="hidecursors">Hide cursors</label><br>
-				<input id="disablechat" type="checkbox"><label for="disablechat">Disable chat</label><br>
-				<input id="walldisablecolour" type="checkbox"><label for="walldisablecolour">Disable color</label><br>
-				<input id="disablebraille" type="checkbox"><label for="disablebraille">Disable braille</label><br>
-				<div id="addmembers">
-					<h3>Add members</h3>
-					<form>
-						<input id="inputmember" placeholder="username" type="text" maxlength="24" minlength="1"><input
-							id="addmemberbtn" value="Add" type="submit"><br>
-					</form>
-					<div id="memberlist"></div>
-				</div>
-				<br>
-				
-				<button class="alert" id="deletewall">Delete wall (DANGEROUS!)</button>
-			</div>
-			<div id="admin">
-				<h3>Admin</h3>
-				<input id="l" type="checkbox"><br>
-				<input type="text" id="t"></input><br>
-				<input id="refresh" value="Refresh" type="button"><br>
-				<textarea id="alerttext"></textarea><br>
-				<input id="sendalert" value="Send" type="button"><br>
-				<input id="reload" value="Reload" type="button"><br>
-				<input type="text" id="deletename"><input type="button" id="delete" value="❌"><br>
-				<input type="text" id="freename"><input type="button" id="free" value="💨"><br>
-				<table id="admintable"></table>
-			</div>
-			<h3> Miscellaneous </h3>
-			<button id="erudaBtn" onclick="loadEruda()">Load Eruda</button>
-
-			<script>
-				function loadEruda() {
-					const btn = document.getElementById('erudaBtn');
-					btn.parentNode.removeChild(btn);
-					const script = document.createElement('script');
-					script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-					script.onload = () => {
-						eruda.init();
-						alert("if you see this message, eruda has loaded successfully");
-					};
-
-					document.body.appendChild(script);
-				}
-			</script>
-		</div>
-		<div class="sidething">
-			<div id="closemenu">
-				<img alt="cancel" src="/static/cancel.svg">
-			</div>
-			<div id="colourlist"></div>
-		</div>
-	</div>
 	<div id="connecting">
 		<div class="connectingtext">
 			<h1 id="connecting1"></h1>
 			<h2 id="connecting2"></h2>
+			<span id="connecting3"></span>
 		</div>
 	</div>
 	<canvas touch-action="none" id="canvas"></canvas>
 	<div id="info">
 		<div class="infotext">
-			<span id="nearby">0 nearby</span>
-			<span id="coords">0,0</span>
+			<!--<span id="nearby">0 nearby</span>
+			<span id="coords">0,0</span>-->
 		</div>
+
 		<div class="buttons">
-			<div id="home" title="Home" class="infobtn"><img alt="home" src="/static/home.svg"></div>
-			<div id="copy" title="Copy" class="infobtn"><img id="copyico" alt="copy" src="/static/copy.svg"></div>
-			<div id="paste" title="Paste" class="infobtn"><img id="pasteico" alt="paste" src="/static/paste.svg"></div>
-			<div id="openmenu" title="Colours" class="infobtn"><img alt="colour" src="/static/palette.svg"></div>
-			<div id="options" title="Options" class="infobtn"><img alt="options" src="/static/settings.svg"></div>
-			<div id="theme" title="Theme" class="infobtn"><img id="themeico" alt="theme" src="/static/sun.svg"></div>
-			<div id="goto" title="Teleport" class="infobtn"><img alt="arrow" src="/static/go.svg"></div>
+			<div id="copy" title="Copy" class="infobtn"><img id="copyico" alt="copy" src="/static/copy.svg"
+					class="nohover"></div>
+			<div id="paste" title="Paste" class="infobtn"><img id="pasteico" alt="paste" src="/static/paste.svg"
+					class="nohover"></div>
+			<div class="separator"></div>
+			<div id="undo" title="Undo" class="infobtn disabled"><img id="undoico" alt="undo" src="/static/undo.svg"
+					class="nohover">
+			</div>
+			<div id="redo" title="Redo" class="infobtn disabled"><img id="redoico" alt="redo" src="/static/redo.svg"
+					class="nohover">
+			</div>
+
+			<div class="separator"></div>
+			<div id="openmenu" title="Colours" class="infobtn"><img alt="colour" src="/static/palette.svg"
+					class="nohover"></div>
+			<div class="separator"></div>
+			<div class="infobtn decor tool" id="bold">
+				<img alt="bold" title="bold" src="/static/bold.svg" class="nohover">
+			</div>
+			<div class="infobtn decor tool" id="italic">
+				<img alt="italic" title="italic" src="/static/italic.svg" class="nohover">
+			</div>
+			<div class="infobtn decor tool" id="underline" alt="underline">
+				<img alt="underline" title="underline" src="/static/underline.svg" class="nohover">
+			</div>
+			<div class="infobtn decor tool" id="strikethrough" alt="strikethrough">
+				<img alt="strikethrough" title="strikethrough" src="/static/strikethrough.svg" class="nohover">
+			</div>
+
+			<div class="separator"></div>
+			<div id="goto" title="Teleport" class="infobtn"><img alt="arrow" src="/static/go.svg" class="nohover"></div>
+			<span id="toggled">
+				<div class="separator"></div>
+				<div class="infobtn tool" id="protect">
+					<img alt="Protect" title="Protect" src="/static/shield.svg" class="nohover">
+				</div>
+				<div class="infobtn tool" id="clear">
+					<img alt="Clear" title="Clear" src="/static/clear.svg" class="nohover">
+				</div>
+			</span>
+
+		</div>
+	</div>
+	<div id="colourcontainer" class="hidden"><span id="colourlist"></span>
+		<button id="customcolour" data-jscolor="{closeButton: true, closeText: 'Close'}" value="ff0000">
+
+	</div>
+	<div class="bubbles-container">
+		<div id="sidemenu" class role="dialog">
+			<div class="sidemenu-vertical">
+
+				<nav class="side-tabs" aria-label="Tabs">
+					<button class="tab-btn active" data-tab="optionsmenu">Options</button>
+					<button class="tab-btn" data-tab="explore">Explore</button>
+					<button class="tab-btn" data-tab="account">Account</button>
+					<button class="tab-btn" data-tab="wall" id="wallsettings">Wall</button>
+					<button class="tab-btn" data-tab="admin_" id="admin">Admin</button>
+					<button class="tab-btn" data-tab="misc">Misc</button>
+					<button class="tab-btn" data-tab="report" id="report">Report</button>
+				</nav>
+
+				<section class="tab-contents" id="tab-contents">
+
+					<div id="optionsmenu" class="tab-content active">
+						<h3>Options</h3>
+						<input id="showothercurs" type="checkbox">
+						<label for="showothercurs">Show other cursors</label><br>
+
+						<input id="shownametags" type="checkbox">
+						<label for="shownametags">Show name tags</label><br>
+
+						<input id="showchat" type="checkbox">
+						<label for="showchat">Show chat</label><br>
+
+						<input id="disablecolour" type="checkbox">
+						<label for="disablecolour">Disable color</label><br>
+
+						<input id="smoothpanning" type="checkbox">
+						<label for="smoothpanning">Smooth panning</label><br>
+
+						<input id="smoothcursors" type="checkbox">
+						<label for="smoothcursors">Smooth cursors</label><br>
+
+						<input id="copycolour" type="checkbox">
+						<label for="copycolour">Copy colors</label><br>
+
+						<input id="copydecorations" type="checkbox">
+						<label for="copydecorations">Copy decorations</label><br>
+						<hr>
+						<label>
+							<input id="rainbow" type="checkbox">
+							Rainbow text
+						</label>
+						<br><br>
+						<label for="rainbowMode">Mode:</label>
+						<select id="rainbowMode">
+							<option value="legacy">Legacy</option>
+							<option value="custom">Custom</option>
+						</select>
+
+						<br><br>
+
+						<label for="hueSpeed">Hue Speed (custom):</label>
+
+						<input id="hueSpeed" type="number" value="1" min="0" step="0.1">
+						<hr>
+						<input type="checkbox" id="darkChat">
+						<label for="darkChat">Dark chat</label><br>
+
+						<input type="checkbox" id="rainbowTag">
+						<label for="rainbowTag">Show rainbow tag animation</label><br>
+
+						<input type="checkbox" id="anonIdShow">
+						<label for="anonIdShow">Show anonymous IDs</label><br>
+
+						<input type="checkbox" id="displayNames">
+						<label for="displayNames">Show display name</label><br>
+
+						<input type="checkbox" id="fps">
+						<label for="showFPS">Show FPS</label><br>
+
+						<input type="checkbox" id="showPing">
+						<label for="showPing">Show ping</label><br>
+
+						<input type="checkbox" id="showFeedback">
+						<label for="showFeedback">Show typing feedback</label><br>
+
+						<input type="checkbox" id="roundCursors">
+						<label for="roundCursors">Round cursors</label><br><br>
+
+						<!--<input type="checkbox" id="doNotChangeTheme">
+						<label for="doNotChangeTheme">Ignore wall themes</label><br>-->
+
+						<button id="clearChat">
+							<label for="clearChat">Clear chats</label>
+						</button><br>
+						<input type="checkbox" id="fadeInMsg">
+						<label for="fadeInMsg">Fade in animation for chat messages</label>
+						<br /><br />
+
+						<label for="zoom">Zoom: </label><input type="range" min="5" max="30" value="10"
+							id="zoom"><br><br>
+
+						<label for="fca">Fetch chunk amount: </label><input type="range" min="5" max="100" value="25"
+							id="fca"><br><br>
+
+						<div>
+							<span style="color: #ffff00"> WARNING: </span>
+							<span> Some of the fonts are low quality!</span>
+						</div>
+						<br>
+
+						<label for="fontselect">Font: </label><select id="fontselect"></select><br>
+
+						<fieldset id="fontmenu">
+							<legend>Custom Font</legend>
+							<label for="customfont">Name:</label><input id="customfont" type="text"><br>
+							<label for="customfontsize">Size:</label><input id="customfontsize" type="number" min="1"
+								max="20" value="20"><br>
+						</fieldset>
+
+						<fieldset id="thememenu">
+							<legend>Custom Theme</legend>
+							<label for="primary">Primary:</label><input id="primary" type="color" value="#FFFCE5"><br>
+							<label for="secondary">Secondary:</label><input id="secondary" type="color"
+								value="#FBFFBD"><br>
+							<input id="themetext" type="checkbox"><label for="themetext">White text</label>
+						</fieldset>
+					</div>
+
+
+					<div id="account" class="tab-content">
+						<form id="login">
+							<h3>Log in</h3>
+							<fieldset>
+								<span id="accbanned" class="red"></span><br>
+								<label for="loginname">Username</label><br>
+								<input id="loginname" autocomplete="username" type="text" maxlength="24"
+									minlength="1"><br>
+								<label for="loginpass">Password</label><br>
+								<input id="loginpass" type="password" autocomplete="current-password" maxlength="64"
+									minlength="1">
+								<input type="submit" id="loginbtn" value="Go"><br><br>
+							</fieldset>
+							<span class="buttonlink" id="registerlink">Register</span>
+						</form>
+
+						<form id="register">
+							<h3>Register</h3>
+							<label for="username">Username</label><br>
+							<input id="username" autocomplete="username" type="text" maxlength="24" minlength="1"><br>
+							<label for="password">Password<small> (don't forget it)</small></label><br>
+							<input id="password" type="password" autocomplete="new-password" maxlength="64"
+								minlength="1"><br>
+							<label for="password2">Password again</label><br>
+							<input id="password2" type="password" autocomplete="new-password" maxlength="64"
+								minlength="1">
+							<input type="submit" id="registerbtn" value="Go"><br>
+							<span class="buttonlink" id="loginlink">Log in</span>
+						</form>
+
+						<div id="loggedin">
+							<p>Logged in as <a id="name" class="buttonlink"></a></p>
+							<input id="anonymous" type="checkbox"><label for="anonymous">Anonymous</label><br><br>
+							<span class="buttonlink" id="logoutlink">Log out</span><br>
+							<div>
+								<h3>Account settings</h3>
+								<form id="changenameform">
+									<fieldset>
+										<legend>Change username</legend>
+										<label for="chngusername">New Username</label><br>
+										<input id="chngusername" type="text" autocomplete="username" maxlength="24"
+											minlength="1"><br>
+										<label for="chngeusrpass">Password</label><br>
+										<input id="chngeusrpass" autocomplete="new-password" type="password"
+											maxlength="64" minlength="1"><br>
+										<input type="submit" id="submitnamechange" value="Change username">
+									</fieldset>
+								</form>
+
+								<form id="changepassform">
+									<fieldset>
+										<legend>Change password</legend>
+										<input type="text" autocomplete="username" style="display: none;">
+										<label for="oldpass">Old password</label><br>
+										<input id="oldpass" type="password" autocomplete="new-password" maxlength="64"
+											minlength="1"><br>
+										<label for="newpass">New password</label><br>
+										<input id="newpass" autocomplete="new-password" type="password" maxlength="64"
+											minlength="1"><br>
+										<label for="newpass2">New password again</label><br>
+										<input id="newpass2" autocomplete="new-password" type="password" maxlength="64"
+											minlength="1"><br>
+										<input type="submit" id="submitpasschange" value="Change password">
+									</fieldset>
+								</form>
+
+								<form id="delaccountform">
+									<fieldset>
+										<legend>Delete account</legend>
+										<input type="text" autocomplete="username" style="display: none;">
+										<label for="deletepassword">Password</label><br>
+										<input id="deletepassword" autocomplete="new-password" type="password"
+											maxlength="64" minlength="1"><br>
+										<input type="submit" id="deleteaccount" value="Delete account">
+									</fieldset>
+								</form>
+
+							</div>
+						</div>
+					</div>
+
+
+					<div id="wall" class="tab-content">
+						<h1>Wall Settings</h1>
+
+						<input id="readonly" type="checkbox"><label for="readonly">Read-only</label><br>
+						<input id="private" type="checkbox"><label for="private">Private</label><br>
+						<input id="hidecursors" type="checkbox"><label for="hidecursors">Hide cursors</label><br>
+						<input id="disablechat" type="checkbox"><label for="disablechat">Disable chat</label><br>
+						<input id="nsfw" type="checkbox"><label for="nsfw">NSFW</label><br>
+						<input id="regonly" type="checkbox"><label for="regonly">Registered users only</label><br>
+						<input id="walldisablecolour" type="checkbox"><label for="walldisablecolour">Disable
+							color</label><br>
+						<input id="disablebraille" type="checkbox"><label for="disablebraille">Disable
+							braille</label><br>
+						<hr>
+						<input id="unlisted" type="checkbox"><label for="unlisted">Unlisted</label>
+						<br>
+						<small class="tip">(not shown in Explore)</small>
+
+						<br>
+						<input id="webhook" type="checkbox"><label for="webhook">Enable webhook</label><br>
+						<small class="tip">Warp to ~textwall/webhooks for usage instructions</small>
+						<br>
+						<div id="api_key" style="display: none;">
+							<span>API Key:</span>
+							<input id="apikey" type="text" readonly value="">
+						</div>
+						<hr>
+						<!--
+						<input id="_theme" type="checkbox"><label for="_theme">Custom theme</label><br>
+						<span>Custom wall theme:</span>
+						<br>
+						<br>
+						<button id="wallthemeprotectcustom" data-jscolor="{closeButton: true, closeText: 'Close'}"
+							value="ff0000">Protected cell/tile color</button><br>
+						<br>
+						<button id="wallthemecustom" data-jscolor="{closeButton: true, closeText: 'Close'}"
+							value="ff0000">Normal tile color</button><br>
+						<hr>-->
+						<div id="addmembers">
+							<h3>Add members</h3>
+							<form>
+								<input id="inputmember" placeholder="username" type="text" maxlength="24" minlength="1">
+								<input id="addmemberbtn" value="Add" type="submit"><br>
+							</form>
+							<div id="memberlist"></div>
+						</div>
+						<br>
+						<button class="alert" id="deletewall">Delete wall (DANGEROUS!)</button>
+					</div>
+
+
+					<div id="admin_" class="tab-content">
+						<h3>Admin</h3>
+						<input id="l" type="checkbox"><br>
+						<input type="text" id="t"></input><br>
+						<input id="refresh" value="Refresh" type="button"><br>
+						<textarea id="alerttext"></textarea><br>
+						<input id="sendalert" value="Send" type="button"><br>
+						<input id="reload" value="Reload" type="button"><br>
+						<input type="text" id="deletename"><input type="button" id="delete" value="❌"><br>
+						<input type="text" id="freename"><input type="button" id="free" value="💨"><br>
+						<table id="admintable"></table>
+					</div>
+
+
+					<div id="misc" class="tab-content">
+						<h3>Miscellaneous</h3>
+						<button id="erudaBtn" onclick="loadEruda()">Load Eruda</button>
+					</div>
+
+
+					<div id="explore" class="tab-content">
+						<h3>Explore</h3>
+						<small class="tip">You can explore public walls and discover content.</small>
+						<form id="exploreform">
+							<input id="exploreinput" placeholder="Search for walls..." type="text" maxlength="250"
+								minlength="1">
+							<input id="explorebtn" value="Search" type="submit"><br>
+						</form>
+						<hr>
+						<div id="exploreresults">
+							<div id="buffer">Search for walls to get the result</div>
+						</div>
+					</div>
+
+					<div id="report" class="tab-content">
+						<h3>Report</h3>
+						<small class="tip">Report users or walls that violate the rules.</small><br>
+						<small class="tip" style="color: #ffff00">Note that you can't submit a report if you're not
+							logged in.</small>
+						<form id="reportform">
+							<label for="reportid">Username or wall name:</label><br>
+							<input id="reportid" placeholder="Username or wall name" type="text" maxlength="250"
+								minlength="1"><br><br>
+
+							<label for="reportreason">Reason:</label><br>
+							<textarea id="reportreason" placeholder="Describe the issue..." maxlength="1000"
+								minlength="1"></textarea><br><br>
+
+							<input id="submitreport" value="Submit Report" type="submit"><br>
+						</form>
+					</div>
+				</section>
+			</div>
+		</div>
+		<div id="bubbles">
+			<div class="bubble clickable"><span id="coords">0,0</span></div>
+			<div class="bubble"><img alt="Nearby" src="/static/user.svg" style="max-width: 20px;max-height:20px"
+					class="nohover">
+				<div id="padding"></div><span id="nearby">0</span>
+			</div>
+			<div id="options_" title="Options" class="bubble clickable"><img alt="options" src="/static/settings.svg"
+					class="nohover">
+			</div>
+			<div id="home" title="Home" class="bubble clickable"><img alt="home" src="/static/home.svg" class="nohover">
+			</div>
+			<div title="Theme" class="bubble clickable" id="theme"><img id="themeico" alt="theme" src="/static/sun.svg"
+					class="nohover">
+			</div>
 		</div>
 	</div>
 	<div id="decorations">
-		<div class="decoration" id="bold">
-			<img alt="bold" title="bold" src="/static/bold.svg">
-		</div>
-		<div class="decoration" id="italic">
-			<img alt="italic" title="italic" src="/static/italic.svg">
-		</div>
-		<div class="decoration" id="underline">
-			<img alt="underline" title="underline" src="/static/underline.svg">
-		</div>
-		<div class="decoration" id="strikethrough">
-			<img alt="strikethrough" title="strikethrough" src="/static/strikethrough.svg">
+
+	</div>
+	<!-- nsfw warning -->
+	<div id="blur_container" class="hide-nsfw"></div>
+	<div id="nsfwwarning" class="hide-nsfw">
+		<h2 class="shake">NSFW Warning</h2>
+		<div class="nsfw-content">
+
+			<p>This wall has been marked as NSFW (Not Safe For Work) by its creator. It may contain content that is
+				inappropriate for certain audiences.</p>
+			<div class="footer">
+				<button id="nsfwaccept" onclick="accept_nsfw()">I understand</button>
+				<button id="nsfwdecline" onclick="decline_nsfw()">No thanks</button>
+			</div>
 		</div>
 	</div>
 	<script src="/static/pep.min.js"></script>
@@ -304,7 +506,7 @@
 	<script>
 		const checkbox = document.getElementById('darkChat');
 		const rainbowTagsCheckbox = document.getElementById("rainbowTag");
-		const chatbox = document.getElementById('chatbox');
+		const chatboxes = document.getElementsByClassName('chatbox');
 		let darkMode = localStorage.getItem('darkMode') === 'true';
 		let rainbowTags = localStorage.getItem('rainbowTags') === 'true';
 		checkbox.checked = darkMode;
@@ -325,40 +527,49 @@
 			else if (original === 'rgb(255,255,255)') el.style.color = darkMode ? '#000' : '#fff';
 		}
 
-		function updateChatbox() {
-			chatbox.style.backgroundColor = darkMode ? '#000' : '#fff';
-			chatbox.style.color = darkMode ? '#fff' : '#000';
-			chatbox.querySelectorAll('*').forEach(applyMode);
-			chatbox.classList[rainbowTagsCheckbox.checked ? "add" : "remove"]("animatedTags");
+		function updateChatboxes() {
+			Array.from(chatboxes).forEach(chatbox => {
+				// Background & text
+				chatbox.style.backgroundColor = darkMode ? '#000' : '#fff';
+				chatbox.style.color = darkMode ? '#fff' : '#000';
+
+				// Apply to all children
+				chatbox.querySelectorAll('*').forEach(applyMode);
+
+				// Rainbow tags
+				chatbox.classList[rainbowTags ? "add" : "remove"]("animatedTags");
+			});
 		}
 
 		checkbox.addEventListener('change', () => {
 			darkMode = checkbox.checked;
 			localStorage.setItem('darkMode', darkMode);
-			updateChatbox();
+			updateChatboxes();
 		});
 		rainbowTagsCheckbox.addEventListener('change', () => {
 			rainbowTags = rainbowTagsCheckbox.checked;
 			localStorage.setItem('rainbowTags', rainbowTags);
-			updateChatbox();
+			updateChatboxes();
 		});
 
-		const observer = new MutationObserver(mutations => {
-			mutations.forEach(m => {
-				m.addedNodes.forEach(node => {
-					if (node.nodeType === 1) {
-						node.classList.add('fade-in');
-						applyMode(node);
-						node.querySelectorAll('*').forEach(applyMode);
-						// Trigger fade-in
-						requestAnimationFrame(() => node.classList.add('show'));
-					}
+
+		Array.from(chatboxes).forEach(chatbox => {
+			const observer = new MutationObserver(mutations => {
+				mutations.forEach(m => {
+					m.addedNodes.forEach(node => {
+						if (node.nodeType === 1) {
+							node.classList.add('fade-in');
+							applyMode(node);
+							node.querySelectorAll('*').forEach(applyMode);
+							requestAnimationFrame(() => node.classList.add('show'));
+						}
+					});
 				});
 			});
+			observer.observe(chatbox, { childList: true, subtree: true });
 		});
 
-		observer.observe(chatbox, { childList: true, subtree: true });
-		updateChatbox();
+		updateChatboxes();
 	</script>
 	<span id="ping">0ms</span>
 	<span id="fpsc">999</span>
@@ -409,8 +620,21 @@
 
 		cb.addEventListener("click", updateCheck);
 
-
 		updateCheck();
+
+		const ce = document.getElementById("showPing");
+
+		ce.checked = localStorage.getItem("showPing") === "true";
+
+		function updatePing() {
+			localStorage.setItem("showPing", ce.checked);
+			const pingElement = document.getElementById('ping');
+			if (pingElement) pingElement.style.display = ce.checked ? 'block' : 'none';
+		}
+
+
+		ce.addEventListener("click", updatePing);
+		updatePing();
 		document.getElementById("clearChat").onclick = function () {
 			if (confirm("Are you sure you want to clear all messages?")) {
 				var chatbox = document.getElementById("chatbox");
@@ -429,9 +653,115 @@
 
 		updateFeedback();
 		feedback.onclick = updateFeedback;
+		const channelButtons = document.querySelectorAll(".channel-btn");
+		window.channelUnread = {
+			world: 0,
+			global: 0
+		};
+
+		channelButtons.forEach(btn => {
+			btn.addEventListener("click", () => {
+				const channel = btn.dataset.channel;
+
+				document.querySelectorAll(".chatbox").forEach(box => {
+					box.classList.toggle("active", box.dataset.channel === channel);
+				});
+
+				window.selectedChatTab = channel === "global" ? 1 : 0;
+
+				const badge = document.querySelector(`.badge[data-badge="${channel}"]`);
+				if (badge) {
+					badge.textContent = "0";
+					badge.classList.remove("show");
+					window.channelUnread[channel] = 0;
+				}
+
+				const typing = document.querySelector(`.typing-notice[data-channel="${channel}"]`);
+				if (typing) {
+					typing.classList.add("active");
+					document.querySelectorAll(`.typing-notice:not([data-channel="${channel}"])`).forEach(t => t.classList.remove("active"));
+				}
+				channelButtons.forEach(b => b.classList.toggle("active", b === btn));
+			});
+		});
+
+		/////////////////////////////////////
+
+		const exploreForm = document.getElementById('exploreform');
+		const exploreInput = document.getElementById('exploreinput');
+		const resultsContainer = document.getElementById('exploreresults');
+
+		exploreForm.onsubmit = async (e) => {
+			e.preventDefault();
+
+			const query = exploreInput.value;
+			const buffer = document.getElementById('buffer');
+			buffer.textContent = `Searching for ${exploreInput.value}...`
+			const oldResults = resultsContainer.querySelectorAll('.result');
+			oldResults.forEach(el => el.remove());
+
+			try {
+				const response = await fetch(`/.explore?q=${encodeURIComponent(query)}`);
+				const data = await response.json();
+
+				if (data.success) {
+					buffer.textContent = `Found ${data.totalFound || "no"} walls`;
+					data.results.forEach(world => {
+						const resultDiv = document.createElement('div');
+						resultDiv.className = 'result';
+						resultDiv.innerHTML = `
+                    <div class="stretchText">${world.worldDisplayName}</div>
+                    <button class="joinbtn" onclick="w.goto('~${world.namespace}/${world.name}')">Join</button>
+                `;
+						resultsContainer.appendChild(resultDiv);
+					});
+				}
+			} catch (err) {
+				console.error("Search failed:", err);
+				buffer.textContent = "Error loading results.";
+			}
+		};
+
+		/////////////////////////////////////
+
+		const reportForm = document.getElementById('reportform')
+		const reportIdInput = document.getElementById('reportid')
+		const reportReasonInput = document.getElementById('reportreason')
+		reportForm.onsubmit = async (e) => {
+			e.preventDefault();
+
+			const id = reportIdInput.value.trim();
+			const reason = reportReasonInput.value.trim();
+
+			if (!id || !reason) {
+				w.showToast("Please fill in all fields.", 2000);
+				return;
+			}
+
+			try {
+				const response = await fetch(`/.report?id=${encodeURIComponent(id)}&reason=${encodeURIComponent(reason)}`);
+
+				// Check if the content-type is actually JSON
+				const contentType = response.headers.get("content-type");
+				let data;
+
+				if (contentType && contentType.includes("application/json")) {
+					data = await response.json();
+				}
+
+				if (response.ok && data?.success) {
+					w.showToast("Report submitted successfully.", 1500);
+				} else {
+					const errorMsg = data?.error || response.statusText || "Unknown error";
+					w.showToast(`Failed to submit report: ${errorMsg}`, 3000);
+				}
+			} catch (err) {
+				w.showToast("Network error or server unreachable.", 3000);
+			}
+		}
 	</script>
 	<script>
-		const defaults = { darkMode: false, anonIdShow: true, rainbowTags: true, showFps: false, showFeedback: true };
+		const defaults = { darkMode: false, anonIdShow: true, rainbowTags: true, showFps: false, showFeedback: true, showPing: false };
 
 		for (const k in defaults) {
 			if (localStorage.getItem(k) === null) {
@@ -456,7 +786,21 @@
 
 		updateAnonId();
 		anonId.onclick = updateAnonId;
+		(function () {
+
+			const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+			const tabContents = Array.from(document.querySelectorAll('.tab-content'));
+			function activateTab(name) {
+				tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+				tabContents.forEach(c => c.classList.toggle('active', c.id === name));
+			}
+			tabButtons.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+			activateTab('optionsmenu');
+
+
+		})();
 	</script>
+
 </body>
 
 </html>

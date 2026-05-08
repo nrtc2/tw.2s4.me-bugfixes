@@ -1,0 +1,294 @@
+ * {
+     font-family: 'Courier New', monospace;
+     box-sizing: border-box;
+ }
+
+ body {
+     margin: 10px;
+     background-color: #000;
+     color: #ccc;
+     font-size: 13px;
+ }
+
+ .tabs {
+     display: flex;
+     flex-wrap: wrap;
+     border: 1px solid #333;
+     background: #0a0a0a;
+ }
+
+ .tab {
+     padding: 4px 10px;
+     cursor: pointer;
+     border-right: 1px solid #333;
+     background-color: #111;
+     color: #888;
+     font-size: 12px;
+ }
+
+ .tab:hover {
+     background-color: #222;
+     color: #fff;
+ }
+
+ .tab.active {
+     background-color: #1e5bb8;
+     color: #fff;
+     font-weight: bold;
+ }
+
+ .not-allowed {
+     color: #444;
+     cursor: not-allowed;
+ }
+
+ .tab-content {
+     display: none;
+     padding: 15px;
+     border: 1px solid #333;
+     border-top: none;
+     background-color: #050505;
+     height: 500px;
+     overflow: auto;
+ }
+
+ .tab-content.active {
+     display: block;
+ }
+
+ button {
+     padding: 3px 8px;
+     background: #1a1a1a;
+     color: #fff;
+     border: 1px solid #444;
+     cursor: pointer;
+     font-size: 12px;
+ }
+
+ button:hover {
+     background: #333;
+     border-color: #666;
+ }
+
+ input[type="text"],
+ select,
+ textarea {
+     background: #000;
+     border: 1px solid #444;
+     color: #0f0;
+     padding: 4px;
+     font-size: 12px;
+     outline: none;
+ }
+
+ input[type="text"]:focus {
+     border-color: #1e5bb8;
+ }
+
+ h2,
+ h3 {
+     margin: 0 0 10px 0;
+     color: #fff;
+     font-size: 16px;
+     text-transform: uppercase;
+ }
+
+ hr {
+     border: 0;
+     border-top: 1px solid #222;
+     margin: 10px 0;
+ }
+
+ #warning {
+     color: #ff8800;
+     border: 1px solid #442200;
+     padding: 8px;
+     display: block;
+     background: #110900;
+     margin-bottom: 15px;
+ }
+
+ tbody td {
+     padding: 8px 8px;
+ }
+
+ .tree-item {
+     padding: 2px 8px !important;
+     font-size: 12px !important;
+     color: #888 !important;
+     border: none !important;
+ }
+
+ .tree-item:hover {
+     background: #161616 !important;
+     color: #0f0 !important;
+ }
+
+ .active-file {
+     background: #1a1a1a !important;
+     color: #fff !important;
+     border-left: 2px solid #1e5bb8 !important;
+ }
+
+ #starterEditorContainer,
+ #remoteEditor {
+     background: #000 !important;
+     border: 1px solid #222 !important;
+ }
+
+ div[style*="background: #111; padding: 10px"] {
+     background: #0a0a0a !important;
+     border: 1px solid #222 !important;
+     padding: 5px 10px !important;
+ }
+
+ #scriptFilename {
+     height: 24px;
+     border: 1px solid #222 !important;
+ }
+
+ #remoteStatus,
+ #starterStatus {
+     font-size: 11px;
+     font-family: monospace;
+     padding: 5px;
+ }
+
+
+ table {
+     width: 100%;
+     border-collapse: collapse;
+     margin-top: 10px;
+     font-size: 11px;
+     border: 1px solid #222;
+ }
+
+ thead th {
+     background-color: #1a1a1a;
+     color: #7293ff;
+     text-align: left;
+     padding: 6px 8px;
+     border-bottom: 2px solid #333;
+     text-transform: uppercase;
+     letter-spacing: 0.5px;
+ }
+
+ tbody td {
+     padding: 4px 8px;
+     border-bottom: 1px solid #111;
+     color: #bbb;
+ }
+
+ tbody tr:hover {
+     background-color: #0c0c0c;
+     color: #fff;
+ }
+
+
+ .controls {
+     background: #0a0a0a;
+     padding: 8px;
+     border: 1px solid #333;
+     display: flex;
+     gap: 5px;
+ }
+
+ #accPagination,
+ #connPagination,
+ #worldPagination {
+     margin-top: 5px;
+     padding: 5px;
+     background: #000;
+     border: 1px solid #222;
+     justify-content: flex-start !important;
+ }
+
+ .status-online {
+     color: #0f0;
+ }
+
+ .status-offline {
+     color: #f00;
+ }
+
+ .box {
+     overflow: auto;
+     height: 300px;
+ }
+
+ [data-graph] {
+     display: flex;
+     flex-direction: column-reverse;
+     gap: 2px;
+     padding: 2px;
+     border: 1px solid #333;
+     position: relative;
+ }
+
+ [data-graph] segment {
+     height: 8px;
+     background: #111;
+     width: 100%;
+     transition: background 0.3s;
+ }
+
+ [data-graph="cpu"] segment {
+     border-left: 3px solid #ff8800;
+ }
+
+ [data-graph="ram"] segment {
+     border-left: 3px solid #7293ff;
+ }
+
+ [style*="--usage: 1"] [data-order="1"],
+ [style*="--usage: 2"] [data-order="1"],
+ [style*="--usage: 2"] [data-order="2"],
+ [style*="--usage: 3"] [data-order="1"],
+ [style*="--usage: 3"] [data-order="2"],
+ [style*="--usage: 3"] [data-order="3"],
+ [style*="--usage: 100"] segment,
+ [style*="--usage: 9"] segment,
+ [style*="--usage: 8"] segment,
+ [style*="--usage: 7"] segment {
+     background: currentColor;
+ }
+
+ segment.active-cpu {
+     background: #ff8800 !important;
+     box-shadow: 0 0 5px #ff8800;
+ }
+
+ segment.active-ram {
+     background: #7293ff !important;
+     box-shadow: 0 0 5px #7293ff;
+ }
+
+ .center {
+     display: flex;
+     justify-content: center;
+     align-items: center;
+ }
+
+ .flex-horizontal {
+     flex-direction: row;
+ }
+
+ .page-btn {
+    background: #1e5bb8;
+    color: white;
+    border: none;
+    padding: 5px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.page-btn:disabled {
+    background: #333;
+    cursor: not-allowed;
+    color: #666;
+}
+
+.page-btn:hover:not(:disabled) {
+    background: #2a75e6;
+}

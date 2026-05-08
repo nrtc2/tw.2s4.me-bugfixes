@@ -1,21 +1,48 @@
 var fs = require("fs");
 var http = require("http");
+var http_2 = require("https");
 var querystring = require("querystring");
 var url_parse = require("url");
 var ws = require("ws");
+var os = require("os");
 var sql = require("better-sqlite3");
 var cookieParser = require('cookie-parser');
 var crypto = require("crypto");
 var express = require("express");
+var e_rateLimit = require("express-rate-limit");
 var path = require("path"); // essential
 const { notDeepEqual } = require("assert");
-var anonymous = [] // so suspicious!
-
+const { create } = require("domain");
+var anonymous = []
+const typingUsers = {}; // { worldId: { userId: { name, timeoutId } } }
 let customSettingsPath = process.argv[2];
-var settings = JSON.parse(fs.readFileSync(
-	(customSettingsPath && customSettingsPath.includes("/")) ? customSettingsPath :
-	"../data/settings.json"
-));
+const settingsPath = (customSettingsPath && customSettingsPath.includes("/"))
+	? customSettingsPath
+	: "../data/settings.json";
+
+var settings = JSON.parse(fs.readFileSync(settingsPath));
+
+function saveSettings() {
+	try {
+		const data = JSON.stringify(settings, null, 4);
+		fs.writeFileSync(settingsPath, data, 'utf8');
+	} catch (error) {
+		throw error;
+	}
+}
+
+var ipBans = JSON.parse(fs.readFileSync(settings.db.ipBansPath));
+
+function saveIpBans() {
+	try {
+		const data = JSON.stringify(ipBans, null, 4);
+		fs.writeFileSync(ipBans, data, 'utf8');
+	} catch (error) {
+		throw error;
+	}
+}
+
+var tags = JSON.parse(fs.readFileSync(settings.db.tagsPath));
 
 console.log("Starting server...");
 
@@ -43,8 +70,18 @@ function checkHash(hash, pass) {
 	if (hash.length !== 3) return false;
 	return encryptHash(pass, hash[1]) === hash.join("$");
 }
+const adminSettingsPath = settings.db.adminSettings;
+const adminSettings = {}
+function loadAdminSettings() {
+	try {
+		Object.assign(adminSettings, JSON.parse(fs.readFileSync(adminSettingsPath)));
+	} catch {
+		throw new Error("Could not load admin settings file");
+	}
+}
+loadAdminSettings();
 
-
+const { execSync } = require('child_process');
 
 (function () {
 	"use strict";
@@ -596,10 +633,8 @@ function checkHash(hash, pass) {
 })();
 function mask_ip(ip) {
 	if (ip.includes(':')) {
-		// ipv6
 		return ip.replace(/^([0-9a-fA-F]+):.+$/, "$1:X:X:X:X:X:X:X");
 	} else {
-		// ipv4
 		return ip.replace(/^(\d+)\.\d+\.\d+\.\d+$/, "$1.X.X.X");
 	}
 }
@@ -617,9 +652,47 @@ function saveWhitelist(data) {
 	fs.writeFileSync(WHITELIST_FILE, JSON.stringify(data, null, 2));
 }
 function isWhitelisted(username) {
-    const [enabled, users] = loadWhitelist();
-    if (!enabled) return true; // whitelist disabled, allow all
-    return users.includes(username);
+	const [enabled, users] = loadWhitelist();
+	if (!enabled) return true; // whitelist disabled, allow all
+	return users.includes(username);
+}
+function refTags() {
+	return JSON.parse(fs.readFileSync(settings.db.tagsPath));
+}
+function saveTags() {
+	fs.writeFileSync(settings.db.tagsPath, JSON.stringify(tags, null, 2));
+	tags = refTags();
+}
+var adminSessions = {};
+
+function loadAdminSessions() {
+	const rows = db.prepare("SELECT username, token, expires_at FROM admin_sessions").all();
+	rows.forEach(row => {
+		if (row.expires_at > Date.now()) {
+			adminSessions[row.token] = { username: row.username, expiresAt: row.expires_at };
+		} else {
+			deleteAdminSession(row.token);
+		}
+	});
+}
+
+function saveAdminSession(username, token, expiresAt) {
+	db.prepare("INSERT INTO admin_sessions (username, token, expires_at) VALUES (?, ?, ?)").run(username, token, expiresAt);
+	adminSessions[token] = { username, expiresAt };
+}
+
+function deleteAdminSession(token) {
+	db.prepare("DELETE FROM admin_sessions WHERE token = ?").run(token);
+	delete adminSessions[token];
+}
+var recent_announcements = [];
+function getRecentAnnouncements() {
+	const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+	recent_announcements = recent_announcements.filter(a => a.timestamp > cutoff);
+	return recent_announcements;
+}
+function saveToRecentAnnouncements(message) {
+	recent_announcements.push({ message, timestamp: Date.now() });
 }
 var httpServer;
 async function runserver() {
@@ -627,16 +700,31 @@ async function runserver() {
 	twrApp.use(express.urlencoded({ extended: true }));
 	twrApp.use(express.json());
 	twrApp.use(cookieParser());
-
+	twrApp.set('view engine', 'ejs');
+	twrApp.set('views', path.join(__dirname, '..', 'views')); // /../views 
 	httpServer = http.createServer(twrApp);
 
-	// 1. Admin POST routes first (dynamic)
+
+
 	function requireAuth(req, res, next) {
 		const token = req.cookies?.admin_session;
-		if (!token) return res.status(403).send("Not Authenticated")
+		const session = token && adminSessions[token];
+
+		if (!session || Date.now() > session.expiresAt) {
+			if (token && session) deleteAdminSession(token);
+			res.clearCookie('admin_session', { path: '/' });
+			// is this a request?
+			if (res.headers["content-type"]?.includes("application/json")) {
+				return res.status(403).json({ success: false, message: "Not authenticated" });
+			} // or is this a browser?
+			else {
+				return res.status(403).render("status", { statusCode: 403 })
+			}
+		}
+
+		req.admin = session.username;
 		next();
 	}
-
 
 	function createAdminRequest(actionPath, handler, opts = { noR: false, get: false }) {
 		const useAuth = !opts.noR;
@@ -651,6 +739,16 @@ async function runserver() {
 			} else {
 				twrApp.get(`/admin/${actionPath}`, handler);
 			}
+		}
+		if (opts.delete) {
+			if (useAuth) {
+				twrApp.delete(`/admin/${actionPath}`, requireAuth, handler);
+			} else {
+				twrApp.delete(`/admin/${actionPath}`, handler);
+			}
+		}
+		if (opts.get && opts.delete) {
+			throw new Error("Conflicting options: Cannot have both GET and DELETE for the same endpoint");
 		}
 	}
 
@@ -673,22 +771,29 @@ async function runserver() {
 		res.cookie('admin_session', token, {
 			maxAge: 7 * 24 * 60 * 60 * 1000,
 			httpOnly: true,
-			path: '/admin',
+			path: '/',
 			sameSite: 'lax',
 			secure: false
 		});
+		const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+		saveAdminSession(username, token, expiresAt);
 
 		res.json({ success: true });
 	}, { noR: true });
 
 	createAdminRequest('check', (req, res) => {
 		const token = req.cookies?.admin_session;
+		const session = token && adminSessions[token];
 
-		if (!token) {
+		if (!session || Date.now() > session.expiresAt) {
+			if (token && session) deleteAdminSession(token); // clean expired session
+			res.clearCookie('admin_session', { path: '/' });
 			return res.json({ authenticated: false });
 		}
-		res.json({ authenticated: true });
+
+		res.json({ authenticated: true, username: session.username });
 	}, { noR: true });
+
 	// BEGIN
 	createAdminRequest('uptime', (req, res) => {
 		const token = req.cookies?.admin_session;
@@ -706,9 +811,14 @@ async function runserver() {
 		if (!token) {
 			return res.json({ authenticated: false });
 		}
-		res.clearCookie('admin_session', { path: '/admin' });
-		res.json({ refresh: true })
-	}, { get: true })
+
+		db.prepare("DELETE FROM admin_sessions WHERE token = ?").run(token);
+		delete adminSessions[token];
+		res.clearCookie('admin_session', { path: '/' });
+
+		res.json({ refresh: true });
+	}, { get: true });
+
 
 	createAdminRequest('remote', (req, res) => {
 		const script = req.body.script;
@@ -988,6 +1098,10 @@ async function runserver() {
 				"dark brown", "burgundy", "pale yellow", "light teal", "lavender", "pale purple",
 				"magenta", "beige", "dark grey"
 			];
+			// support numeric palette index or RGB888 array
+			if (Array.isArray(idx) && idx.length >= 3 && idx.every(n => Number.isInteger(n))) {
+				return `custom color #${idx[0].toString(16).padStart(2, '0')}${idx[1].toString(16).padStart(2, '0')}${idx[2].toString(16).padStart(2, '0')}`;
+			}
 			return titles[idx] || 'black';
 		};
 
@@ -1011,7 +1125,7 @@ async function runserver() {
 		const page = parseInt(req.query.page) || 1;
 		const pageSize = parseInt(req.query.pageSize) || 10;
 
-		const allClients = Object.values(clients).filter(c => c.sdata);
+		const allClients = Array.from(wss.clients).filter(c => c.sdata);
 
 		const totalItems = allClients.length;
 		const totalPages = Math.ceil(totalItems / pageSize);
@@ -1029,7 +1143,7 @@ async function runserver() {
 		res.json({ u: process.uptime() })
 	}, { get: true })
 	createAdminRequest('active/all', (req, res) => {
-		const allClients = Object.values(clients).filter(c => c.sdata);
+		const allClients = Array.from(wss.clients).filter(c => c.sdata);
 
 		const data = allClients
 			.map(buildConnectionResponse)
@@ -1043,7 +1157,7 @@ async function runserver() {
 		const page = parseInt(req.query.page) || 1;
 		const pageSize = parseInt(req.query.pageSize) || 10;
 
-		const allClients = Object.values(clients).filter(c => c.sdata);
+		const allClients = Array.from(wss.clients).filter(c => c.sdata);
 
 		// Filter by username
 		const filtered = allClients
@@ -1087,27 +1201,1061 @@ async function runserver() {
 	createAdminRequest("whitelist/list", (req, res) => {
 		const wl = loadWhitelist();
 		res.json(wl);
-	}, {get: true})
-	const adminPath = path.join(__dirname, "../admin");
-	twrApp.use("/admin", express.static(adminPath));
-	/*twrApp.get(/^\/admin(\/.*)?$/, (req, res) => {
-		const requestedFile = path.join(adminPath, req.path.replace("/admin/", ""));
+	}, { get: true })
+	// STARTER SCRIPTS
+	const STARTER_SCRIPTS_DIR = path.resolve("..", "starter-scripts");
+	createAdminRequest(".ss", (req, res) => {
+		const scripts = {};
 
-		// express will resolve against root and prevent escaping it
-		res.sendFile(rel, { root: adminPath }, (err) => {
-			if (err) {
-				return res.sendFile('index.html', { root: adminPath });
+		function readDirRecursive(dir, relativePath = "") {
+			if (!fs.existsSync(dir)) return;
+			const items = fs.readdirSync(dir);
+
+			items.forEach(item => {
+				const fullPath = path.join(dir, item);
+				const relItemPath = relativePath ? path.join(relativePath, item) : item;
+
+				if (fs.statSync(fullPath).isDirectory()) {
+					readDirRecursive(fullPath, relItemPath);
+				} else {
+					scripts[relItemPath.replace(/\\/g, '/')] = fs.readFileSync(fullPath, "utf-8");
+				}
+			});
+		}
+
+		try {
+			if (!fs.existsSync(STARTER_SCRIPTS_DIR)) fs.mkdirSync(STARTER_SCRIPTS_DIR, { recursive: true });
+			readDirRecursive(STARTER_SCRIPTS_DIR);
+			res.json(scripts);
+		} catch (err) {
+			res.status(500).send("Error loading scripts");
+		}
+	}, { get: true });
+
+	createAdminRequest(".ss/create", (req, res) => {
+		const { path: filePath, content } = req.body;
+		if (!filePath || typeof content !== 'string') return res.status(400).json({ success: false });
+
+		const targetPath = path.resolve(STARTER_SCRIPTS_DIR, filePath);
+
+		if (!targetPath.startsWith(STARTER_SCRIPTS_DIR)) {
+			return res.status(403).json({ success: false, error: "Path Traversal Blocked" });
+		}
+		// avoid null byte poisoning
+		if (filePath.includes('\0')) {
+			return res.status(400).json({ success: false, error: "Invalid file path" });
+		}
+		// avoid duplicate extensions like .js.js
+		if (path.extname(filePath) && path.extname(filePath) !== '.js') {
+			return res.status(400).json({ success: false, error: "Only .js extension allowed" });
+		}
+		// avoid XSS
+		if (/<script[\s\S]*?>[\s\S]*?<\/script>/gi.test(content)) {
+			return res.status(400).json({ success: false, error: "Content contains disallowed script tags" });
+		}
+
+		// to ensure no ddos via large file creation, limit content size to 1MB
+		if (Buffer.byteLength(content, 'utf-8') > 1024 * 1024) {
+			return res.status(400).json({ success: false, error: "Content too large" });
+		}
+
+		try {
+			const targetDir = path.dirname(targetPath);
+			if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+			const finalPath = path.extname(targetPath) ? targetPath : targetPath + ".js";
+			fs.writeFileSync(finalPath, content, "utf-8");
+			res.json({ success: true });
+		} catch (err) {
+			res.status(500).json({ success: false, error: err.message });
+		}
+	}, { get: false });
+
+	createAdminRequest(".ss/delete", (req, res) => {
+		const { path: filePath } = req.body;
+		if (!filePath) return res.status(400).json({ success: false });
+
+		const targetPath = path.resolve(STARTER_SCRIPTS_DIR, filePath);
+
+		if (!targetPath.startsWith(STARTER_SCRIPTS_DIR)) {
+			return res.status(403).json({ success: false });
+		}
+
+		try {
+			if (fs.existsSync(targetPath)) {
+				const stats = fs.statSync(targetPath);
+				if (stats.isDirectory()) {
+					fs.rmSync(targetPath, { recursive: true, force: true });
+				} else {
+					fs.unlinkSync(targetPath);
+				}
+
+				res.json({ success: true });
+			} else {
+				res.status(404).json({ success: false, error: "Not Found" });
 			}
+		} catch (err) {
+			res.status(500).json({ success: false, error: err.message });
+		}
+	}, { delete: true });
+
+	createAdminRequest("tags", (req, res) => {
+		var { page } = req.query;
+		page = parseInt(page) || 1;
+		const PAGE_SIZE = 10;
+		const allTags = Object.entries(tags).map(([account, tag], index) => {
+			const user = db.prepare("SELECT * FROM users WHERE id=?").get(account);
+			return {
+				id: index + 1,
+				account: user ? user.username : account,
+				tag: tag
+			};
 		});
-	});*/
-	if (settings.useStatic) {
-		twrApp.use(express.static(staticPath));
+
+		const totalItems = allTags.length;
+		const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+
+		if (totalItems === 0) {
+			return res.json({ page: 1, PAGE_SIZE, totalItems: 0, totalPages: 1, data: [] });
+		}
+
+		if (page > totalPages || page < 1) {
+			return res.json({ invalid_page: true });
+		}
+
+		const offset = (page - 1) * PAGE_SIZE;
+		const data = allTags.slice(offset, offset + PAGE_SIZE);
+
+		res.json({ page, PAGE_SIZE, totalItems, totalPages, data });
+	}, { get: true });
+
+	createAdminRequest("tags/del/:id", (req, res) => {
+		const tagId = parseInt(req.params.id);
+		if (isNaN(tagId)) {
+			return res.status(400).json({ success: false, error: "Invalid tag ID" });
+		}
+
+		const tagEntry = Object.entries(tags)[tagId - 1];
+		if (!tagEntry) {
+			return res.status(404).json({ success: false, error: "Tag not found" });
+		}
+
+		const [account, tag] = tagEntry;
+		delete tags[account];
+		saveTags();
+		res.json({ success: true });
+	}, { delete: true });
+	createAdminRequest("tags/add", (req, res) => {
+		const { account, tag } = req.body;
+		if (!account || !tag) {
+			return res.status(400).json({ success: false, error: "Missing account or tag" });
+		}
+
+		const user = db.prepare("SELECT * FROM users WHERE username=?").get(account);
+		if (!user) {
+			return res.status(404).json({ success: false, error: "User not found" });
+		}
+		// Use authUserId instead
+		const userId = user.id;
+		tags[userId] = tag;
+		saveTags();
+		res.json({ success: true });
+	}, { post: true });
+	function getCPUInfo() {
+		const cpus = os.cpus();
+		let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
+		for (const cpu of cpus) {
+			user += cpu.times.user;
+			nice += cpu.times.nice;
+			sys += cpu.times.sys;
+			idle += cpu.times.idle;
+			irq += cpu.times.irq;
+		}
+		const total = user + nice + sys + idle + irq;
+		return { idle, total };
 	}
 
-	twrApp.get(/^\/(?!admin(\/|$)).*$/, (req, res) => {
-		res.sendFile('index.html', { root: staticPath });
+	async function cpuUsage() {
+		const stats1 = getCPUInfo();
+
+		return new Promise(resolve => {
+			setTimeout(() => {
+				const stats2 = getCPUInfo();
+
+				const idleDiff = stats2.idle - stats1.idle;
+				const totalDiff = stats2.total - stats1.total;
+
+				if (totalDiff === 0) return resolve(0);
+				const percentage = (1 - idleDiff / totalDiff) * 100;
+				resolve(percentage.toFixed(1));
+			}, 200);
+		});
+	}
+	createAdminRequest("server/diagnostics", async (req, res) => {
+		const cpuPercentage = await cpuUsage();
+		const totalMem = os.totalmem();
+		const freeMem = os.freemem();
+		const usedMem = totalMem - freeMem;
+		const ramPercentage = Math.floor((usedMem / totalMem) * 100);
+		const uptimeSeconds = os.uptime();
+		const days = Math.floor(uptimeSeconds / (3600 * 24));
+		const hrs = Math.floor((uptimeSeconds % (3600 * 24)) / 3600);
+		const mins = Math.floor((uptimeSeconds % 3600) / 60);
+		const uptimeString = `${days}D ${hrs}H ${mins}M`;
+
+		res.json({
+			cpuLoad: cpuPercentage,
+			ramUsage: ramPercentage,
+			uptime: uptimeString,
+			cpuModel: os.cpus()[0].model.split('@')[0].trim(),
+			cores: os.cpus().length,
+			ramTotal: `${(totalMem / (1024 ** 3)).toFixed(1)} GB`,
+			nodeVersion: process.version,
+			platform: os.platform(),
+			version: settings.version
+		});
+	}, { get: true });
+	createAdminRequest("chat_logs", (req, res) => {
+		const page = parseInt(req.query.page) || 1;
+		const search = req.query.q ? `%${req.query.q}%` : null;
+		const PAGE_SIZE = 20;
+		const whereClause = search ? "WHERE username LIKE ? OR message LIKE ?" : "";
+		const params = search ? [search, search] : [];
+		const totalItems = db.prepare(`SELECT COUNT(*) AS count FROM chathistory ${whereClause}`).get(...params).count;
+		const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+
+		if (page > totalPages && totalPages > 0) return res.json({ success: false, error: "Invalid page" });
+
+		const offset = (page - 1) * PAGE_SIZE;
+		const query = `
+        SELECT c.*, '~' || w.name || '/' || w.namespace AS world_str
+        FROM chathistory c
+        LEFT JOIN worlds w ON c.world_id = w.id
+        ${whereClause}
+        ORDER BY c.timestamp DESC 
+        LIMIT ? OFFSET ?
+    `;
+
+		const logs = db.prepare(query).all(...params, PAGE_SIZE, offset);
+
+		res.json({
+			success: true,
+			page,
+			totalPages,
+			totalItems,
+			data: logs.map(log => ({
+				id: log.id,
+				username: log.username,
+				message: log.message,
+				timestamp: new Date(log.timestamp).toISOString(),
+				world: log.world_str || `ID: ${log.world_id}`
+			}))
+		});
+	}, { get: true });
+	createAdminRequest("poc/exec", (req, res) => {
+		const { targetClientId, packets } = req.body;
+		if (!targetClientId || !packets || !Array.isArray(packets)) {
+			return res.status(400).json({ success: false, error: "Invalid request body" });
+		}
+
+		if (targetClientId === "broadcast") {
+			packets.forEach(packet => broadcast(encodeMsgpack(packet)));
+			return res.json({ success: true, broadcast: true });
+		} else {
+			const ws = clients[targetClientId];
+			if (!ws) {
+				return res.status(404).json({ success: false, error: "Client not found" });
+			}
+			try {
+				packets.forEach(packet => send(ws, encodeMsgpack(packet)));
+				res.json({ success: true });
+			} catch (err) {
+				res.status(500).json({ success: false, error: err.message });
+			}
+		}
+	});
+	createAdminRequest("usr/create", (req, res) => {
+		const { username, password } = req.body;
+		if (!username || !password) return res.status(400).json({ success: false, error: "Missing username or password" });
+
+		const existingUser = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+		if (existingUser) return res.status(409).json({ success: false, error: "Username already exists" });
+
+		const hash = encryptHash(password);
+		const result = db.prepare("INSERT INTO users (username, password, date_joined) VALUES (?, ?, ?)").run(username, hash, Date.now());
+		if (result.changes === 1) {
+			res.json({ success: true, userId: result.lastInsertRowid });
+		} else {
+			res.status(500).json({ success: false, error: "Failed to create user" });
+		}
+	});
+	createAdminRequest("usr/delete", (req, res) => {
+		const { username } = req.body;
+		if (!username) return res.status(400).json({ success: false, error: "Missing username" });
+
+		const user = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+		if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+		const result = db.prepare("DELETE FROM users WHERE id=?").run(user.id);
+		if (result.changes === 1) {
+			res.json({ success: true });
+		} else {
+			res.status(500).json({ success: false, error: "Failed to delete user" });
+		}
+	}, { delete: true });
+	createAdminRequest("usr/list", (req, res) => {
+		let { page, q } = req.query;
+		page = parseInt(page) || 1;
+		const PAGE_SIZE = 15;
+		const searchFilter = q ? `%${q}%` : null;
+
+		let totalItems, users;
+
+		if (searchFilter) {
+			totalItems = db.prepare("SELECT COUNT(*) AS count FROM users WHERE username LIKE ?")
+				.get(searchFilter).count;
+			const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+			const offset = (page - 1) * PAGE_SIZE;
+
+			users = db.prepare("SELECT id, username, date_joined FROM users WHERE username LIKE ? LIMIT ? OFFSET ?")
+				.all(searchFilter, PAGE_SIZE, offset);
+
+			res.json({ success: true, page, totalPages, totalItems, users, q });
+		} else {
+			totalItems = db.prepare("SELECT COUNT(*) AS count FROM users").get().count;
+			const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+			const offset = (page - 1) * PAGE_SIZE;
+
+			users = db.prepare("SELECT id, username, date_joined FROM users LIMIT ? OFFSET ?")
+				.all(PAGE_SIZE, offset);
+
+			res.json({ success: true, page, totalPages, totalItems, users });
+		}
+	}, { get: true });
+
+	createAdminRequest("usr/change_password", (req, res) => {
+		const { username, newPassword } = req.body;
+		if (!username || !newPassword) return res.status(400).json({ success: false, error: "Missing username or new password" });
+
+		const user = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+		if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+		const newHash = encryptHash(newPassword);
+		const result = db.prepare("UPDATE users SET password=? WHERE id=?").run(newHash, user.id);
+		if (result.changes === 1) {
+			res.json({ success: true });
+		} else {
+			res.status(500).json({ success: false, error: "Failed to change password" });
+		}
 	});
 
+	createAdminRequest("token/invalidate", (req, res) => {
+		const { username } = req.body;
+		if (!username) return res.status(400).json({ success: false, error: "Missing username" });
+
+		const user = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+		if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+		const ws = [...wss.clients].find(c => c.sdata && c.sdata.authUser === username);
+		if (ws) {
+			var sdata = ws.sdata;
+			if (sdata.authToken) {
+				db.prepare("DELETE FROM tokens WHERE username=?").run(username);
+			}
+			send(ws, encodeMsgpack({
+				perms: 0
+			}));
+			sdata.isAdmin = false;
+			sdata.isModerator = false;
+			send(ws, encodeMsgpack({ admin: false }));
+			send(ws, encodeMsgpack({ mod: false }));
+
+			sdata.isAuthenticated = false;
+			sdata.authUser = "";
+			sdata.authUserId = 0;
+			sdata.isMember = false;
+			sdata.displayName = "";
+			worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+				cu: {
+					id: sdata.clientId,
+					l: [sdata.cursorX, sdata.cursorY],
+					c: sdata.cursorColor,
+					n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : ""),
+					dn: "",
+				}
+			}), ws);
+			send(ws, encodeMsgpack({ token_invalid: true }));
+		} else {
+
+		}
+
+		res.json({ success: true });
+	});
+
+	createAdminRequest("tokens/list", (req, res) => {
+		var { page } = req.query;
+		page = parseInt(page) || 1;
+		const PAGE_SIZE = 10;
+
+		const totalItems = db.prepare("SELECT COUNT(*) AS count FROM tokens").get().count;
+		const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+
+		if (totalItems === 0) {
+			return res.json({ page: 1, PAGE_SIZE, totalItems: 0, totalPages: 1, data: [] });
+		}
+
+		if (page > totalPages || page < 1) {
+			return res.json({ invalid_page: true });
+		}
+
+		const offset = (page - 1) * PAGE_SIZE;
+		const tokens = db.prepare("SELECT * FROM tokens LIMIT ? OFFSET ?").all(PAGE_SIZE, offset);
+
+		res.json({
+			page,
+			PAGE_SIZE,
+			totalItems,
+			totalPages,
+			data: tokens.map(token => ({
+				username: token.username,
+				token: token.token
+			}))
+		});
+	}, { get: true });
+
+	createAdminRequest("ratelimit/toggle", (req, res) => {
+		adminSettings.rateLimit = Boolean(req.body.toggle);
+		saveSettings();
+		res.json({ success: true, enabled: Boolean(adminSettings.rateLimit) });
+	}, { post: true });
+
+	createAdminRequest("ratelimit/modify_packets", (req, res) => {
+		var { packets } = req.body;
+		if (!Array.isArray(packets)) {
+			return res.status(400).json({ success: false, error: "Packets should be an array" });
+		}
+		for (const pkt of packets) {
+			const key = Object.keys(pkt)[0];
+			const value = pkt[key];
+			if (adminSettings.rateLimits.hasOwnProperty(key) && Number.isInteger(value) && value >= 0) {
+				adminSettings.rateLimits[key] = value;
+			} else {
+				return res.status(400).json({ success: false, error: `Invalid packet key or value: ${key}` });
+			}
+		}
+		saveSettings();
+		res.json({ success: true, rateLimits: adminSettings.rateLimits });
+	});
+
+	createAdminRequest("ratelimit/packets", (req, res) => {
+		res.json({ success: true, rateLimits: adminSettings.rateLimits });
+	}, { get: true });
+
+	createAdminRequest("settings/update", (req, res) => {
+		const { l, regclosed } = req.body;
+		if (typeof l === 'boolean') adminSettings.l = l;
+		if (typeof regclosed === 'boolean') adminSettings.regclosed = regclosed;
+		saveSettings();
+		res.json({ success: true, settings: { l: adminSettings.l, regclosed: adminSettings.regclosed } });
+	});
+	createAdminRequest("settings/get", (req, res) => {
+		res.json({ success: true, settings: { l: adminSettings.l, regclosed: adminSettings.regclosed } });
+	}, { get: true });
+	createAdminRequest("moderators/promote", (req, res) => {
+		const { username } = req.body;
+		if (!username) return res.status(400).json({ success: false, error: "Missing username" });
+
+		const user = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+		if (!user) return res.status(404).json({ success: false, error: "User not found" });
+
+		const exists = settings.moderatorList.some(u => u.toLowerCase() === username.toLowerCase());
+		if (!exists) {
+			settings.moderatorList.push(user.username);
+			saveSettings();
+		}
+
+		res.json({ success: true });
+	}, { post: true });
+
+	createAdminRequest("moderators/demote", (req, res) => {
+		const { username } = req.body;
+		if (!username) return res.status(400).json({ success: false, error: "Missing username" });
+
+		settings.moderatorList = settings.moderatorList.filter(u => u.toLowerCase() !== username.toLowerCase());
+		saveSettings();
+
+		res.json({ success: true });
+	}, { delete: true });
+	createAdminRequest("moderators/list", (req, res) => {
+		const moderators = settings.moderatorList.map(username => {
+			const user = db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE").get(username);
+			return user ? { id: user.id, username: user.username } : { username };
+		});
+		res.json({ success: true, moderators });
+	}, { get: true });
+	createAdminRequest("maintenance/toggle", (req, res) => {
+		settings.maintenance = Boolean(req.body.toggle);
+		Array.from(wss.clients).forEach(e => e.close(1000, "Maintenance"))
+		saveSettings();
+		res.json({ success: true, maintenance: settings.maintenance });
+	});
+	createAdminRequest("maintenance/save_msg", (req, res) => {
+		const { message } = req.body;
+		if (typeof message !== 'string') {
+			return res.status(400).json({ success: false, error: "Message must be a string" });
+		}
+		settings.maintenanceMsg = message;
+		saveSettings();
+		res.json({ success: true, maintenanceMsg: settings.maintenanceMsg });
+	});
+
+	createAdminRequest("notice/annc", (req, res) => {
+		const { message } = req.body;
+		if (typeof message !== 'string') {
+			return res.status(400).json({ success: false, error: "Message must be a string" });
+		}
+		broadcast(encodeMsgpack({ msg: ["[ANNOUNCEMENT]", 2, message, false, false, "global"] }));
+		broadcast(encodeMsgpack({ msg: ["[ANNOUNCEMENT]", 2, message, false, false, "world"] }));
+		broadcast(encodeMsgpack({ alert: message }));
+		saveToRecentAnnouncements(message);
+	})
+
+	createAdminRequest("notice/recent_annc", (req, res) => {
+		const recent = getRecentAnnouncements();
+		res.json({ success: true, announcements: recent });
+	}, { get: true });
+
+	function mask_ip(ip) {
+		if (ip.includes(':')) {
+			return ip.replace(/^([0-9a-fA-F]+):.+$/, "$1:X:X:X:X:X:X:X");
+		} else {
+			return ip.replace(/^(\d+)\.\d+\.\d+\.\d+$/, "$1.X.X.X");
+		}
+	}
+
+	createAdminRequest('bans/list', (req, res) => {
+		const accountBans = db.prepare(`
+        SELECT u.username, b.uid, b.reason, b.expires_at, b.issuer 
+        FROM bans b 
+        JOIN users u ON b.uid = u.id
+    `).all();
+
+		const ipBanList = ipBans.map(ip => ({
+			ip: ip,
+			masked: mask_ip(ip)
+		}));
+
+		res.json({ accounts: accountBans, ips: ipBanList });
+	}, { get: true });
+	createAdminRequest('ban/account', (req, res) => {
+		const { username, reason, expiresAt } = req.body;
+		const issuer = req.user?.username || "System";
+
+		const userObj = db.prepare("SELECT id FROM 'users' WHERE username=? COLLATE NOCASE").get(username);
+		if (!userObj) return res.status(404).json({ error: "User not found" });
+		const expiry = parseInt(expiresAt) || 0;
+
+		db.prepare("INSERT OR REPLACE INTO bans (uid, expires_at, reason, issuer) VALUES (?, ?, ?, ?)").run(
+			userObj.id,
+			expiry,
+			reason || "No reason",
+			issuer
+		);
+
+		wss.clients.forEach(ws => {
+			if (ws.sdata && ws.sdata.authUserId === userObj.id) {
+				send(ws, encodeMsgpack({
+					accbanned: {
+						expiresAt: expiry,
+						reason: reason,
+						issuer: issuer
+					}
+				}));
+			}
+		});
+
+		res.json({ success: true });
+	});
+	createAdminRequest('ban/ip', (req, res) => {
+		const { target, reason } = req.body;
+		let ipToBan = null;
+
+		wss.clients.forEach(ws => {
+			if (ws.sdata && (ws.sdata.authUser === target || ws.sdata.ipAddr === target)) {
+				ipToBan = ws.sdata.ipAddr;
+			}
+		});
+
+		if (!ipToBan && target.includes('.')) ipToBan = target;
+		if (!ipToBan) return res.status(404).json({ error: "Target IP not found" });
+
+		if (!ipBans.includes(ipToBan)) {
+			ipBans.push(ipToBan);
+		}
+
+		wss.clients.forEach(ws => {
+			if (ws.sdata && ws.sdata.ipAddr === ipToBan) {
+				ws.close(1000, "IP-banned");
+			}
+		});
+
+		res.json({ success: true, masked: mask_ip(ipToBan) });
+	});
+
+	createAdminRequest('unban/account', (req, res) => {
+		const { uid } = req.body;
+		db.prepare("DELETE FROM bans WHERE uid=?").run(uid);
+		res.json({ success: true });
+	});
+
+	createAdminRequest('unban/ip', (req, res) => {
+		const { ip } = req.body;
+		const index = ipBans.indexOf(ip);
+		if (index > -1) {
+			ipBans.splice(index, 1);
+		}
+		res.json({ success: true });
+	});
+
+	const adminPath = path.join(__dirname, "../admin");
+
+	function checkAdminSession(req, res, next) {
+		const token = req.cookies?.admin_session;
+		const session = token && adminSessions[token];
+
+		if (req.path === '/log_log.html') { return next(); }
+
+
+		if (!session || Date.now() > session.expiresAt) {
+			if (token && session) deleteAdminSession(token); // clean expired session from memory and database
+			res.clearCookie('admin_session', { path: '/admin' });
+			return res.sendFile(path.join(adminPath, "log_log.html"));
+		}
+		return next();
+	}
+
+
+	twrApp.use("/admin", checkAdminSession, express.static(adminPath));
+
+	twrApp.use("/admin", (req, res) => {
+		res.status(404).render("status", { statusCode: 404 });
+	});
+
+
+
+	twrApp.get('/.explore', (req, res) => {
+		const query = req.query.q || '';
+		const PAGE_SIZE = 8;
+		const page = parseInt(req.query.page) || 1;
+		const offset = (page - 1) * PAGE_SIZE;
+
+		try {
+			const worlds = db.prepare("SELECT * FROM worlds WHERE (namespace LIKE ? OR name LIKE ?)")
+				.all(`%${query}%`, `%${query}%`);
+
+			const filteredWorlds = worlds.filter(world => {
+				try {
+					const attr = JSON.parse(world.attributes);
+					// DO NOT show worlds if unlisted is true
+					return attr.unlisted !== true;
+				} catch (e) {
+					return true;
+				}
+			});
+			const paginatedData = filteredWorlds.slice(offset, offset + PAGE_SIZE);
+
+			const results = paginatedData.map(world => {
+				return {
+					namespace: world.namespace,
+					name: world.name,
+					worldDisplayName: world.name === 'main' ? world.namespace : `${world.namespace}/${world.name}`
+				};
+			});
+
+			res.json({
+				success: filteredWorlds.length ? true : false,
+				results: results,
+				totalFound: filteredWorlds.length
+			});
+		} catch (err) {
+			res.status(500).json({ success: false, error: "Database error during exploration." });
+		}
+	});
+
+	twrApp.get('/.report', (req, res) => {
+		const { id, reason } = req.query;
+		const webhook = adminSettings.discordWebhooks.report;
+		if (!webhook) {
+			return res.status(503).json({ success: false, error: "Reporting is not configured" });
+		}
+
+		const ip = req.ip;
+
+		const client = [...wss.clients].find(c => c.sdata.ipAddr === ip);
+		if (!client || !client.sdata || !client.sdata.isAuthenticated) {
+			return res.status(403).json({ success: false, error: "You must be authenticated to report" });
+		}
+
+		const now = Date.now();
+		if (client.lastReportTime && now - client.lastReportTime < 10 * 60 * 1000) {
+			return res.status(429).json({ success: false, error: "You can only report once every 10 minutes" });
+		}
+
+		client.lastReportTime = now;
+
+		const payload = {
+			content: "",
+			embeds: [
+				{
+					title: `Report by @${client.sdata.authUser} (${client.sdata.clientId})`,
+					description: `Type: ${id}\nReason: ${reason}`,
+					color: 16711680,
+					timestamp: new Date().toISOString()
+				}
+			]
+		};
+
+		http_2.request(webhook, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			}
+		}, (response) => {
+			if (response.statusCode >= 200 && response.statusCode < 300) {
+				res.json({ success: true });
+			} else {
+				res.status(500).json({ success: false, error: "Failed to send report" });
+			}
+		}).on("error", (err) => {
+			res.status(500).json({ success: false, error: "Failed to send report" });
+		}).end(JSON.stringify(payload));
+	})
+	twrApp.get(/^\/(?!admin(\/|$)|\.ss(\/|$)|\.ws(\/|$)|\.report(\/|$)|\.wb(\/|$)).*$/, (req, res, next) => {
+		const userIp = req.ip || req.connection.remoteAddress;
+		if (ipBans.includes(userIp)) {
+			return res.status(403).render('accessDenied', {});
+		}
+		if (settings.maintenance) {
+			return res.status(503).render('maintenance', {
+				maintenanceMsg: settings.maintenanceMsg
+			});
+		}
+		if (req.path.includes('.') && !req.path.endsWith('.html')) {
+			return next();
+		}
+		res.sendFile('index.html', { root: staticPath });
+	});
+	if (settings.useStatic)
+		twrApp.use(express.static(staticPath));
+
+
+	// For starter scripts
+	twrApp.get(/^\/\.ss$/, (req, res) => {
+		const scripts = [];
+		function readDirRecursive(dir, relativePath = "") {
+			if (!fs.existsSync(dir)) return;
+			const items = fs.readdirSync(dir);
+
+			items.forEach(item => {
+				const fullPath = path.join(dir, item);
+				const relItemPath = relativePath ? path.join(relativePath, item) : item;
+
+				if (fs.statSync(fullPath).isDirectory()) {
+					readDirRecursive(fullPath, relItemPath);
+				} else {
+					scripts.push(relItemPath.replace(/\\/g, '/'));
+				}
+			});
+		}
+		readDirRecursive(STARTER_SCRIPTS_DIR);
+		res.json(scripts);
+	});
+	// .ss/:script
+	twrApp.get(/^\/\.ss\/(.+)$/, (req, res) => {
+		const scriptPath = req.params[0];
+		const targetPath = path.resolve(STARTER_SCRIPTS_DIR) + path.sep + scriptPath;
+
+		if (!targetPath.startsWith(STARTER_SCRIPTS_DIR)) {
+			return res.status(403).json({ success: false });
+		}
+		// null char
+		if (scriptPath.includes('\0')) {
+			return res.status(403).json({ success: false });
+		}
+		// incase of double encoding attempts
+		let input = scriptPath;
+		for (let i = 0; i < 3; i++) {
+			try { input = decodeURIComponent(input); } catch { }
+		}
+
+		if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
+			res.sendFile(targetPath);
+		} else {
+			res.status(404).json({ success: false, error: "Not Found" });
+		}
+	});
+	var WORLD_SCRIPTS_DIR = path.resolve("..", "world-scripts");
+	// .ws/:script
+	twrApp.get(/^\/\.ws\/(.+)$/, (req, res) => {
+		const scriptPath = req.params[0];
+		const targetPath = path.resolve(WORLD_SCRIPTS_DIR) + path.sep + scriptPath;
+
+		if (!targetPath.startsWith(WORLD_SCRIPTS_DIR)) {
+			return res.status(403).json({ success: false });
+		}
+		// null char
+		if (scriptPath.includes('\0')) {
+			return res.status(403).json({ success: false });
+		}
+		// incase of double encoding attempts
+		let input = scriptPath;
+		for (let i = 0; i < 3; i++) {
+			try { input = decodeURIComponent(input); } catch { }
+		}
+
+		if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
+			res.sendFile(targetPath);
+		} else {
+			res.status(404).json({ success: false, error: "Not Found - Maybe this world doesn't have a script or is not existent" });
+		}
+	});
+	//---------------------------------------------------------------//
+	//                            WEBHOOKS                           //
+	//---------------------------------------------------------------//
+	const stmtGetKey = db.prepare("SELECT * FROM webhooks WHERE api_key = ?");
+	function apiKeyCheck(next) {
+		return function (req, res) {
+			const id = decodeURIComponent(req.params.key);
+			const apiKey = stmtGetKey.get(id);
+
+			if (!apiKey) {
+				return res.status(403).json({ success: false, error: "Invalid API key" });
+			}
+			req.apiKey = apiKey;
+			req.world_id = apiKey.world_id;
+			return next(req, res);
+		};
+	}
+	function createWebhookEndpoint(endpoint, handler, opts = { get: false, delete: false }) {
+		const fullPath = `/.wb/:key/${endpoint}`;
+		const limitAmount = adminSettings.webhookRatelimits[endpoint] || 10;
+
+		const limiter = e_rateLimit({
+			windowMs: 1000,
+			max: limitAmount,
+			message: {
+				success: false,
+				error: `Rate limit exceeded for ${endpoint}. Max ${limitAmount} per second.`
+			},
+			standardHeaders: true,
+			legacyHeaders: false,
+			keyGenerator: (req) => req.params.key
+		});
+
+		const middleware = apiKeyCheck(handler);
+		twrApp.post(fullPath, limiter, middleware);
+
+		if (opts.get) {
+			twrApp.get(fullPath, limiter, middleware);
+		}
+		if (opts.delete) {
+			twrApp.delete(fullPath, limiter, middleware);
+		}
+
+		if (opts.get && opts.delete) {
+			throw new Error("Conflicting options: Cannot have both GET and DELETE for the same webhook endpoint");
+		}
+	}
+	/////////////////////// ENDPOINTS ////////////////////////
+
+	//helper
+	function arrayOrNumber(value) {
+		if (typeof value !== "string") return value;
+		let cleaned = decodeURIComponent(value).trim();
+		if (cleaned.startsWith("[") && cleaned.endsWith("]")) {
+			try {
+				return JSON.parse(cleaned);
+			} catch (e) {
+
+				return cleaned;
+			}
+		}
+		const num = Number(cleaned);
+		if (cleaned !== "" && !isNaN(num)) {
+			return num;
+		}
+
+		return cleaned;
+	}
+
+	createWebhookEndpoint("edit", (req, res) => {
+		var { x, y, char, color } = req.query;
+
+		if (!x) {
+			return res.status(400).json({ success: false, error: "Missing x coordinate" });
+		}
+		if (!y) {
+			return res.status(400).json({ success: false, error: "Missing y coordinate" });
+		}
+		if (!is_whole_number(x) && !is_whole_number(y)) {
+			return res.status(400).json({ success: false, error: "Coordinates must be whole numbers" });
+		}
+		x = parseInt(x);
+		y = parseInt(y);
+		if (char === undefined) {
+			return res.status(400).json({ success: false, error: "Missing char parameter" });
+		}
+		if (char.length > 1) {
+			return res.status(400).json({ success: false, error: "Char parameter must be a single character" });
+		}
+		if (color !== undefined) {
+			let colorNum = arrayOrNumber(color);
+
+			if (Array.isArray(colorNum)) {
+				if (colorNum.length === 3) {
+					colorNum.push(0);
+				}
+
+				const isValid = colorNum.length === 4 &&
+					colorNum.every(c => typeof c === "number" && c >= 0 && c <= 255);
+
+				if (!isValid) {
+					return res.status(400).json({
+						success: false,
+						error: "Color array must have 3 or 4 numbers between 0 and 255."
+					});
+				}
+				color = colorNum;
+
+			} else if (typeof colorNum !== "number" || isNaN(colorNum) || colorNum < 0 || colorNum > 31) {
+				return res.status(400).json({
+					success: false,
+					error: "Color must be a number between 0-31 or an RGB(Deco) array."
+				});
+			} else {
+				color = colorNum;
+			}
+		}
+		const worldId = req.world_id;
+		const chunkX = Math.floor(x / 20);
+		const chunkY = Math.floor(y / 10);
+		let localX = x % 20;
+		if (localX < 0) localX += 20;
+
+		let localY = y % 10;
+		if (localY < 0) localY += 10;
+		const index = (localY * 20) + localX;
+		const charCode = typeof char === "string" ? char.charCodeAt(0) : char;
+		const stat = writeChunk(worldId, chunkX, chunkY, index, charCode, color || 0, true);
+
+		if (stat) {
+			worldBroadcast(worldId, encodeMsgpack({
+				e: { e: [[chunkX, chunkY, charCode, index, color || 0]], clientId: -1 }
+			}));
+			return res.json({ success: true, chunkX, chunkY, index });
+		}
+
+		res.status(500).json({ success: false, error: "Failed to write to chunk" });
+	}, { get: true });
+	createWebhookEndpoint("clear", (req, res) => {
+		const { x, y } = req.query;
+		if (isNaN(x) || isNaN(y)) {
+			return res.status(400).json({ success: false, error: "Invalid x or y" });
+		}
+		x = Math.floor(x);
+		y = Math.floor(y);
+		if (x % 20 !== 0 || y % 10 !== 0) {
+			return res.status(400).json({
+				success: false,
+				error: "Coordinates must be chunk-aligned (x multiple of 20, y multiple of 10)"
+			});
+		}
+		const chunkX = Math.floor(x / 20);
+		const chunkY = Math.floor(y / 10);
+		clearChunk(req.world_id, chunkX, chunkY);
+		worldBroadcast(req.world_id, encodeMsgpack({
+			c: [chunkX * 20, chunkY * 10, chunkX * 20 + 19, chunkY * 10 + 9]
+		}));
+
+		res.json({
+			success: true,
+			cleared: { x, y, chunkX, chunkY }
+		});
+	}, { get: true });
+
+	createWebhookEndpoint("protect", (req, res) => {
+		let x = parseInt(req.query.x);
+		let y = parseInt(req.query.y);
+		x = Math.floor(x);
+		y = Math.floor(y);
+		if (isNaN(x) || isNaN(y)) {
+			return res.status(400).json({ success: false, error: "Invalid x or y" });
+		}
+
+		if (x % 20 !== 0 || y % 10 !== 0) {
+			return res.status(400).json({
+				success: false,
+				error: "Coordinates must be chunk-aligned (x % 20, y % 10)"
+			});
+		}
+
+		const chunkX = Math.floor(x / 20);
+		const chunkY = Math.floor(y / 10);
+
+		const prot = toggleProtection(req.world_id, chunkX, chunkY);
+
+		worldBroadcast(req.world_id, encodeMsgpack({
+			p: [(chunkX * 20) + "," + (chunkY * 10), Boolean(prot)]
+		}));
+
+		res.json({
+			success: true,
+			protected: Boolean(prot),
+			chunk: [chunkX, chunkY]
+		});
+	}, { get: true });
+	// for attributes
+	function createToggleEndpoint(endpoint, attrName, packetKey) {
+		createWebhookEndpoint(endpoint, (req, res) => {
+			const val = req.query.toggle;
+			const newState = (val === "1" || val === "true" || val === 1 || val === true);
+			editWorldAttr(req.world_id, attrName, newState);
+			const packet = {};
+			packet[packetKey] = newState;
+			worldBroadcast(req.world_id, encodeMsgpack(packet));
+
+			res.json({
+				success: true,
+				attribute: attrName,
+				enabled: newState
+			});
+		}, { get: true });
+	}
+
+	createToggleEndpoint("readonly", "readonly", "ro");
+	createToggleEndpoint("private", "private", "priv");
+	createToggleEndpoint("hide_cursors", "hideCursors", "ch");
+	createToggleEndpoint("disable_chat", "disableChat", "dc");
+	createToggleEndpoint("disable_color", "disableColor", "dcl");
+	createToggleEndpoint("disable_braille", "disableBraille", "db");
+	createToggleEndpoint("unlisted", "unlisted", "un");
+	createToggleEndpoint("nsfw", "nsfw", "nsfw");
+	createToggleEndpoint("registered_only", "regonly", "regonly");
+
+	/*createWebhookEndpoint("kick", (req, res) => {
+		const { target } = req.query;
+		if (!target) {
+			return res.status(400).json({ success: false, error: "Missing target client ID" });
+		}
+		const ws = [...wss.clients].find(c => c.sdata && c.sdata.clientId === target);
+		if (!ws) {
+			return res.status(404).json({ success: false, error: "Target client not found" });
+		}
+		ws.sdata.connectedWorldName = "textwall";
+		ws.sdata.connectedWorldNamespace = "main";
+		send(ws, encodeMsgpack({ j: ["textwall", "main"] }));
+	
+		res.json({ success: true, kickedClientId: target });
+	}, { get: true });*/
 	httpServer.listen(port, function () {
 		var addr = httpServer.address();
 		console.log("TWR server is hosted on " + addr.address + ":" + addr.port);
@@ -1128,6 +2276,38 @@ function is_whole_number(x) {
 
 var ipConnLim = {};
 
+var rateLimits = adminSettings.rateLimits
+var rateLimitsByIp = {};
+function isRateLimited(ip, packetType) {
+	if (adminSettings.rateLimit) {
+		var admin = wss.clients && [...wss.clients].find(c => c.sdata && c.sdata.ipAddr === ip && c.sdata.isAdmin);
+		if (admin) return false;
+		if (!rateLimits[packetType]) return false;
+		let period = Math.floor(Date.now() / 1000);
+		if (!rateLimitsByIp[ip]) {
+			rateLimitsByIp[ip] = {};
+		}
+		if (!rateLimitsByIp[ip][packetType]) {
+			rateLimitsByIp[ip][packetType] = [1, period];
+			return false;
+		}
+		let ipLim = rateLimitsByIp[ip][packetType];
+		let max = rateLimits[packetType];
+		if (ipLim[1] == period) {
+			if (ipLim[0] >= max) {
+				return true;
+			} else {
+				ipLim[0]++;
+				return false;
+			}
+		} else {
+			ipLim[0] = 1;
+			ipLim[1] = period;
+			return false;
+		}
+	}
+	return false;
+}
 
 
 var wss;
@@ -1147,8 +2327,8 @@ function send(ws, data) {
 	}
 }
 
-function constructChar(color, bold, italic, underline, strike) {
-	var format = strike | underline << 1 | italic << 2 | bold << 3;
+function constructChar(color, bold, italic, underline, strike, overline) {
+	var format = strike | underline << 1 | italic << 2 | bold << 3 | overline << 4;
 	var n = format * 31 + color;
 	return String.fromCharCode(n + 192);
 }
@@ -1158,6 +2338,7 @@ function parseChar(chr) {
 	var format = Math.floor(chr / 31);
 	return {
 		color: col,
+		overline: (format & 16) == 16,
 		bold: (format & 8) == 8,
 		italic: (format & 4) == 4,
 		underline: (format & 2) == 2,
@@ -1184,6 +2365,15 @@ function generateToken() {
 	return str;
 }
 
+function generateWebhookToken() {
+	var set = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	var str = "";
+	for (var i = 0; i < 48; i++) {
+		str += set[Math.floor(Math.random() * set.length)];
+	}
+	return str;
+}
+
 function san_nbr(x) {
 	if (typeof x === "bigint") x = Number(x);
 	if (typeof x === "boolean") x = x ? 1 : 0;
@@ -1202,33 +2392,53 @@ var modifiedChunks = {};
 
 function commitChunks() {
 	db.prepare("BEGIN");
+
 	for (var t in modifiedChunks) {
 		var tup = t.split(",");
 		var worldId = parseInt(tup[0]);
 		var chunkX = parseInt(tup[1]);
 		var chunkY = parseInt(tup[2]);
+
 		var data = chunkCache[t];
+
 		var text = data.char.join("");
-		var color = "";
-		for (var i = 0; i < data.color.length; i++) {
-			color += String.fromCharCode(data.color[i] + 192);
-		}
-		var prot = data.protected;
+		var color = JSON.stringify(data.color);
+		var prot = Number(data.protected);
+
+		// convert protection array → "010101..."
+		var textProt = data.textProtected
+			? data.textProtected.map(v => v ? "1" : "0").join("")
+			: "0".repeat(200);
+
 		if (data.exists) {
-			db.prepare("UPDATE chunks SET text=?, colorFmt=?, protected=? WHERE world_id=? AND x=? AND y=?").run(text, color, Number(prot), worldId, chunkX, chunkY);
+
+			db.prepare(`
+				UPDATE chunks
+				SET text=?, colorFmt=?, protected=?, text_protected=?
+				WHERE world_id=? AND x=? AND y=?
+			`).run(text, color, prot, textProt, worldId, chunkX, chunkY);
+
 		} else {
+
 			data.exists = true;
-			//console.log(tup, worldId, chunkX, chunkY, text, color, prot);
-			db.prepare("INSERT INTO chunks VALUES(?, ?, ?, ?, ?, ?)").run(worldId, chunkX, chunkY, text, color, Number(prot));
+
+			db.prepare(`
+				INSERT INTO chunks
+				(world_id, x, y, text, colorFmt, protected, text_protected)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
+			`).run(worldId, chunkX, chunkY, text, color, prot, textProt);
+
 		}
+
 		delete modifiedChunks[t];
 	}
+
 	db.prepare("COMMIT");
 }
 
 setInterval(function () {
 	commitChunks();
-}, 1000 * 10);
+}, 60 * 1000);
 
 setInterval(function () {
 	flushCache();
@@ -1242,56 +2452,114 @@ function flushCache() {
 }
 
 function getChunk(worldId, x, y, canCreate) {
+	var getChunkStmt = db.prepare(
+		"SELECT * FROM chunks WHERE world_id=? AND x=? AND y=?"
+	)
 	var tuple = worldId + "," + x + "," + y;
+
 	if (chunkCache[tuple]) {
 		return chunkCache[tuple];
-	} else {
-		var data = db.prepare("SELECT * FROM chunks WHERE world_id=? AND x=? AND y=?").get(worldId, x, y);
-		if (data) {
-			var colorRaw = data.colorFmt;
-			var colorArray = [];
+	}
+
+	var data = getChunkStmt.get(worldId, x, y);
+	if (data) {
+		var colorRaw = data.colorFmt;
+		var colorArray = [];
+
+		try {
+			colorArray = JSON.parse(colorRaw);
+			if (!Array.isArray(colorArray)) throw new Error("not array");
+		} catch (e) {
 			for (var i = 0; i < colorRaw.length; i++) {
 				colorArray.push(colorRaw[i].charCodeAt() - 192);
 			}
-			var cdata = {
-				char: [...data.text],
-				color: colorArray,
-				protected: Boolean(data.protected),
-				exists: true
-			};
-			chunkCache[tuple] = cdata;
-			return cdata;
-		} else {
-			var cdata = {
-				char: new Array(10 * 20).fill(" "),
-				color: new Array(10 * 20).fill(0),
-				protected: false
-			};
-			if (canCreate) {
-				chunkCache[tuple] = cdata;
-			}
-			return cdata;
 		}
+
+		var textProt = new Array(200).fill(false);
+
+		if (data.text_protected) {
+			for (let i = 0; i < data.text_protected.length && i < 200; i++) {
+				textProt[i] = data.text_protected[i] === "1";
+			}
+		}
+
+		var cdata = {
+			char: [...data.text],
+			color: colorArray,
+			protected: Boolean(data.protected),
+			textProtected: textProt,
+			exists: true
+		};
+
+		chunkCache[tuple] = cdata;
+		return cdata;
+
+	} else {
+
+		var cdata = {
+			char: new Array(10 * 20).fill(" "),
+			color: new Array(10 * 20).fill(0),
+			protected: false,
+			textProtected: new Array(200).fill(false)
+		};
+
+		if (canCreate) {
+			chunkCache[tuple] = cdata;
+		}
+
+		return cdata;
 	}
 }
 function writeChunk(worldId, x, y, idx, char, colorFmt, isMember) {
 	if (char == 0 || (char >= 0xD800 && char <= 0xDFFF)) return false;
+
 	var tuple = worldId + "," + x + "," + y;
 	var chunk = getChunk(worldId, x, y, true);
-	var prot = chunk.protected;
-	if (prot && !isMember) return false;
+
+
+	if (chunk.protected && !isMember) return false;
+	if (chunk.textProtected && chunk.textProtected[idx] && !isMember) return false;
+
 	chunk.char[idx] = String.fromCodePoint(char);
 	chunk.color[idx] = colorFmt;
+
 	modifiedChunks[tuple] = true;
 	return true;
+};
+function toggleCellProtection(worldId, x, y, idx) {
+	var tuple = worldId + "," + x + "," + y;
+	var chunk = getChunk(worldId, x, y, true);
+
+	if (chunk.protected) {
+		// break chunk protection into per-cell protection
+		chunk.protected = false;
+		chunk.textProtected = new Array(200).fill(true);
+
+		// unprotect only this cell
+		chunk.textProtected[idx] = false;
+
+		modifiedChunks[tuple] = true;
+		return false;
+	}
+
+	if (!Array.isArray(chunk.textProtected)) {
+		chunk.textProtected = new Array(200).fill(false);
+	}
+
+	chunk.textProtected[idx] = !chunk.textProtected[idx];
+	modifiedChunks[tuple] = true;
+	return chunk.textProtected[idx];
 }
+
 function toggleProtection(worldId, x, y) {
 	var tuple = worldId + "," + x + "," + y;
 	var chunk = getChunk(worldId, x, y, true);
+
 	chunk.protected = !chunk.protected;
 	modifiedChunks[tuple] = true;
 	return chunk.protected;
 }
+
 function clearChunk(worldId, x, y) {
 	var tuple = worldId + "," + x + "," + y;
 	var chunk = getChunk(worldId, x, y, false);
@@ -1347,12 +2615,26 @@ function editWorldAttr(worldId, prop, value) {
 }
 function sendWorldAttrs(ws, world) {
 	var attr = JSON.parse(world.attributes);
+	var sdata = ws.sdata;
+	var isOwner = sdata.isAuthenticated && (
+		(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
+		(settings.adminList && settings.adminList.includes(sdata.authUser))
+	);
+
 	send(ws, encodeMsgpack({ ro: Boolean(attr.readonly) }));
 	send(ws, encodeMsgpack({ priv: Boolean(attr.private) }));
 	send(ws, encodeMsgpack({ ch: Boolean(attr.hideCursors) }));
 	send(ws, encodeMsgpack({ dc: Boolean(attr.disableChat) }));
 	send(ws, encodeMsgpack({ dcl: Boolean(attr.disableColor) }));
 	send(ws, encodeMsgpack({ db: Boolean(attr.disableBraille) }));
+	send(ws, encodeMsgpack({ un: Boolean(attr.unlisted) }));
+	send(ws, encodeMsgpack({ nsfw: Boolean(attr.nsfw) }));
+	send(ws, encodeMsgpack({ regonly: Boolean(attr.regonly) }));
+	send(ws, encodeMsgpack({ theme: attr.theme || [false, null, null] }));
+	var webhookData = attr.webhook || [false, null];
+	send(ws, encodeMsgpack({
+		webhook: isOwner ? [Boolean(webhookData[0]), webhookData[1]] : [Boolean(webhookData[0]), null]
+	}));
 }
 
 function evictClient(ws) {
@@ -1371,7 +2653,7 @@ function evictClient(ws) {
 		perms: 0
 	}));
 	send(ws, encodeMsgpack({
-		b: [-1000000000000, 1000000000000, -1000000000000, 1000000000000]
+		b: [-Infinity, Infinity, -Infinity, Infinity]
 	}));
 	ws.sdata.isConnected = true;
 	var worldInfo = db.prepare("SELECT * FROM worlds WHERE id=1").get();
@@ -1391,6 +2673,17 @@ function worldBroadcast(connectedWorldId, data, excludeWs) {
 	});
 }
 
+function command_output_broadcast(connectedWorldId, output) {
+	wss.clients.forEach(function (sock) {
+		if (!sock || !sock.sdata) return;
+		if (String(sock.sdata.connectedWorldId) === String(connectedWorldId) && sock.sdata.command_output_enabled) {
+
+			send(sock, encodeMsgpack({ cmd: output }));
+		}
+	});
+}
+
+
 function dumpCursors(ws) {
 	wss.clients.forEach(function (sock) {
 		if (!sock || !sock.sdata) return;
@@ -1401,7 +2694,8 @@ function dumpCursors(ws) {
 					id: sock.sdata.clientId,
 					l: [sock.sdata.cursorX, sock.sdata.cursorY],
 					c: sock.sdata.cursorColor,
-					n: sock.sdata.cursorAnon ? "" : (sock.sdata.isAuthenticated ? sock.sdata.authUser : "")
+					n: sock.sdata.cursorAnon ? "" : (sock.sdata.isAuthenticated ? sock.sdata.authUser : ""),
+					dn: sock.sdata.displayName || ""
 				}
 			}));
 		}
@@ -1416,59 +2710,7 @@ function encodeMsgpack(data) {
 	}
 }
 
-// number of packets per second
-var rateLimits = {
-	"j": 8,
-	"r": 7,
-	"ce": 22,
-	"e": 77,
-	"msg": 2,
-	"register": 1,
-	"login": 2,
-	"token": 15,
-	"logout": 5,
-	"addmem": 5,
-	"rmmem": 5,
-	"deleteaccount": 1,
-	"ro": 9,
-	"priv": 9,
-	"ch": 9,
-	"dc": 9,
-	"dcl": 9,
-	"db": 9,
-	"p": 9,
-	"dw": 2,
-	"namechange": 1,
-	"passchange": 1,
-	"c": 15,
-	"ping": 60000000000000000000 // effectively unlimited
-};
-var rateLimitsByIp = {};
-function isRateLimited(ip, packetType) {
-	if (!rateLimits[packetType]) return false;
-	let period = Math.floor(Date.now() / 1000);
-	if (!rateLimitsByIp[ip]) {
-		rateLimitsByIp[ip] = {};
-	}
-	if (!rateLimitsByIp[ip][packetType]) {
-		rateLimitsByIp[ip][packetType] = [1, period];
-		return false;
-	}
-	let ipLim = rateLimitsByIp[ip][packetType];
-	let max = rateLimits[packetType];
-	if (ipLim[1] == period) {
-		if (ipLim[0] >= max) {
-			return true;
-		} else {
-			ipLim[0]++;
-			return false;
-		}
-	} else {
-		ipLim[0] = 1;
-		ipLim[1] = period;
-		return false;
-	}
-}
+
 
 var clientRecord = {};
 var chatMutesByIP = {};
@@ -1481,6 +2723,16 @@ let fullMuteByIP = {};
 let fullMuteByUserIDs = {};
 let canvasMuteMutated = false;
 let fullMuteMutated = false;
+
+function assignDN(sdata, ws, update = true) {
+	if (!sdata.isAuthenticated) return;
+	var hasDisplayNameDb = db.prepare("SELECT display_name FROM display_names WHERE user_id=?").get(sdata.authUserId)?.display_name;
+	sdata.displayName = hasDisplayNameDb || sdata.authUser;
+	if (update) dumpCursors(ws);
+	send(ws, encodeMsgpack({
+		dn: hasDisplayNameDb
+	}));
+}
 
 function clearClientRecord() {
 	for (let c in clientRecord) {
@@ -1516,6 +2768,7 @@ function loadMutes() {
 
 loadMutes();
 const canvasMuteDbPath = settings.db.canvasMutePath;
+
 
 function saveCanvasMutes() {
 	fs.writeFileSync(canvasMuteDbPath, JSON.stringify({
@@ -1576,12 +2829,56 @@ let saveMuteInterval = setInterval(function () {
 		saveMutes();
 	}
 }, 1000 * 5);
+let recentAnncInterval = setInterval(() => {
+	getRecentAnnouncements();
+}, 60 * 60 * 1000);
+function broadcastTyping(key, channel) {
+	const users = Object.values(typingUsers[key] || {}).map(u => ({
+		id: u.id,
+		name: u.name
+	}));
+
+	const packet = encodeMsgpack({
+		typing: { users, channel }
+	});
+
+	if (channel === "global") {
+
+		broadcast(packet);
+	} else {
+
+		worldBroadcast(key, packet, null);
+	}
+}
+let torBlacklist = new Set();
+
+function updateTorExitNodes() {
+	http_2.get("https://check.torproject.org/exit-addresses", function (res) {
+		let rawData = "";
+		res.on("data", (chunk) => { rawData += chunk; });
+
+		res.on("end", () => {
+			const regex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+			const foundIps = rawData.match(regex);
+
+			if (foundIps) {
+				torBlacklist = new Set(foundIps);
+			}
+		});
+	}).on("error", (err) => {
+		console.error("Error fetching Tor list:", err.message);
+	});
+}
+
+updateTorExitNodes();
+setInterval(updateTorExitNodes, 1 * 60 * 60 * 1000);
 
 function init_ws() {
 	wss = new ws.Server({ server: httpServer });
 
 	wss.on("connection", function (ws, req) {
 		var ipAddr = ws._socket.remoteAddress;
+
 		//console.log(ipAddr, JSON.stringify(req.headers))
 		if (!ipAddr) return;
 		if (ipAddr.startsWith("::ffff:")) {
@@ -1599,8 +2896,21 @@ function init_ws() {
 		var connObj = ipConnLim[ipAddr];
 
 		if (connObj[0] >= 15) {
-			ws.close();
+			ws.close(1000, "Too many connections from your IP");
 			return;
+		}
+		if (torBlacklist.has(ipAddr)) {
+			ws.close(1000, "Connections from Tor exit nodes are not allowed");
+			return;
+		};
+
+		if (req.headers["sec-websocket-protocol"] !== "3.0.0") {
+			ws.close(1000, "Version mismatch");
+			return;
+		}
+
+		if (settings.maintenance) {
+			ws.close(1000, "Maintenance")
 		}
 
 		console.log("New client:", ipAddr);
@@ -1630,13 +2940,18 @@ function init_ws() {
 			cursorAnon: false,
 			worldAttr: {},
 			isAdmin: false,
+			isModerator: false,
+			displayName: "",
+			chatChannel: "world",
+			command_output_enabled: false
 		};
 
 		clientRecord[clientId] = sdata;
 		ws.sdata = sdata;
 		send(ws, encodeMsgpack({ id: clientId }));
-		sdata.isAdmin = settings.adminList.includes(sdata.authUser)
+		sdata.isAdmin = settings.adminList.includes(sdata.authUser);
 		send(ws, encodeMsgpack({ admin: sdata.isAdmin }));
+
 		clients[ws.sdata.clientId] = ws;
 		fs.readFile("../data/starter_scripts.json", "utf8", (err, data) => {
 			if (err) return console.error("failed to read file:", err);
@@ -1649,6 +2964,8 @@ function init_ws() {
 				console.error("failed to parse JSON:", e);
 			}
 		});
+
+
 		ws.on("message", function (message, binary) {
 
 			if (!binary) return;
@@ -1677,10 +2994,11 @@ function init_ws() {
 
 			let packetType = Object.keys(data)[0];
 			if (!packetType) return;
-
 			if (isRateLimited(ipAddr, packetType)) {
 				return;
 			}
+
+			assignDN(sdata, ws, false);
 
 
 			if ("j" == packetType) {
@@ -1707,25 +3025,13 @@ function init_ws() {
 					}
 
 				}
-				// if admin joins, send owner stuff
-				// start
 				if (sdata.isAuthenticated && adminList.includes(sdata.authUser.toLowerCase())) {
 					sendOwnerStuff(ws, sdata.connectedWorldId, sdata.connectedWorldNamespace);
 				}
-				fs.readFile("../data/on_world_scripts.json", "utf8", (err, data) => {
-					if (err) return console.error("failed to read file:", err);
-
-					try {
-						const json = JSON.parse(data);
-						send(ws, encodeMsgpack({ ows: json }));
-
-					} catch (e) {
-						console.error("failed to parse JSON:", e);
-					}
-				});
 				send(ws, encodeMsgpack({
 					online: onlineCount
 				}));
+				send(ws, encodeMsgpack({ worldid: sdata.connectedWorldId }));
 				broadcast(encodeMsgpack({
 					online: onlineCount
 				}), ws);
@@ -1746,7 +3052,12 @@ function init_ws() {
 							hideCursors: false,
 							disableChat: false,
 							disableColor: false,
-							disableBraille: false
+							disableBraille: false,
+							unlisted: false,
+							nsfw: false,
+							regonly: false,
+							webhook: [false, null],
+							theme: null
 						})).lastInsertRowid;
 						var worldInfo = db.prepare("SELECT * FROM worlds WHERE rowid=?").get(insertInfo);
 						sdata.connectedWorldNamespace = worldInfo.namespace;
@@ -1762,10 +3073,13 @@ function init_ws() {
 						sdata.isConnected = true;
 						sendOwnerStuff(ws, sdata.connectedWorldId, sdata.connectedWorldNamespace);
 						send(ws, encodeMsgpack({
-							b: [-1000000000000, 1000000000000, -1000000000000, 1000000000000]
+							b: [-Infinity, Infinity, -Infinity, Infinity]
 						}));
 						sendWorldAttrs(ws, worldInfo);
 						dumpCursors(ws);
+
+
+
 						return;
 					} else {
 						evictClient(ws);
@@ -1776,9 +3090,54 @@ function init_ws() {
 				var attr = JSON.parse(world.attributes);
 				sdata.worldAttr = attr;
 
+
+				if (sdata.worldAttr.nsfw) {
+					send(ws, {
+						nsfw: true
+					})
+				}
+
+				if (sdata.worldAttr.theme) {
+					send(ws, {
+						changeTheme: sdata.worldAttr.theme
+					})
+				}
+
+
+
+
 				sdata.connectedWorldNamespace = world.namespace;
 				sdata.connectedWorldName = world.name;
 				sdata.connectedWorldId = world.id;
+				var rows = db.prepare(`
+    SELECT username, message, isAdmin, isAuth, channel, tag, timestamp, color 
+    FROM chathistory 
+    WHERE world_id = ? OR channel = 'global'
+    ORDER BY timestamp DESC 
+    LIMIT 70
+`).all(sdata.connectedWorldId);
+
+
+				send(ws, encodeMsgpack({
+					chathistory: rows.reverse().map(row => {
+						let colorValue = row.color;
+						if (typeof colorValue === "string" && colorValue.includes(",")) {
+							colorValue = colorValue.split(",").map(Number);
+						}
+
+						return [
+							row.username,           // nickName
+							colorValue,             // colorIndex / RGB Array
+							row.message,            // msgText
+							!!row.isAuth,           // !!isAuthFlag (from row.isAuth)
+							!!row.isAdmin,          // !!isAdminFlag
+							row.channel,            // channelName
+							row.username,           // displayNick
+							row.timestamp,          // timestamp
+							row.tag                 // tag
+						];
+					})
+				}))
 
 				send(ws, encodeMsgpack({
 					j: [sdata.connectedWorldNamespace, sdata.connectedWorldName]
@@ -1797,7 +3156,7 @@ function init_ws() {
 					sendOwnerStuff(ws, sdata.connectedWorldId, sdata.connectedWorldNamespace);
 				} else if (sdata.isAuthenticated) {
 					var memberCheck = db.prepare("SELECT * FROM members WHERE username=? COLLATE NOCASE AND world_id=?").get(sdata.authUser, sdata.connectedWorldId);
-					if (memberCheck) {
+					if (memberCheck || sdata.isModerator) {
 						send(ws, encodeMsgpack({
 							perms: 1
 						}));
@@ -1826,12 +3185,32 @@ function init_ws() {
 				sendWorldAttrs(ws, world);
 
 				send(ws, encodeMsgpack({
-					b: [-1000000000000, 1000000000000, -1000000000000, 1000000000000]
+					b: [-Infinity, Infinity, -Infinity, Infinity]
 				}));
+				assignDN(sdata, ws, false);
 				dumpCursors(ws);
+				function normalizeWorldName(name) {
+					if (typeof name !== "string") return "";
+					return name.replace(/\//g, "_");
+				}
+
+				var worldScriptsDir = path.join(
+					__dirname,
+					"../world-scripts",
+					normalizeWorldName(sdata.connectedWorldNamespace) + "_" + normalizeWorldName(sdata.connectedWorldName) + "/"
+				);
+				fs.readdir(worldScriptsDir, (err, files) => {
+					if (err) {
+						return;
+					}
+					const scriptFiles = files.filter(f => f.endsWith(".js"));
+					const scriptNames = scriptFiles.map(f => f.slice(0, -3));
+					send(ws, encodeMsgpack({ owsc: scriptNames }));
+				});
 				sdata.isConnected = true;
 			} else if ("r" == packetType) {
 				if (!sdata.isConnected) return;
+				if (sdata.worldAttr.regonly && !sdata.isAuthenticated) return;
 				var regions = data.r;
 
 				if (sdata.worldAttr.private && !sdata.isMember) return;
@@ -1849,23 +3228,41 @@ function init_ws() {
 					var color = cd.color;
 					var color2 = "";
 					for (var z = 0; z < color.length; z++) {
-						color2 += String.fromCharCode(color[z] + 192);
+						var colorVal = color[z];
+
+						if (Array.isArray(colorVal)) {
+
+							color2 += "[";
+							color2 += String.fromCharCode(192 + (colorVal[0] >> 6)) + String.fromCharCode(192 + ((colorVal[0] >> 0) & 63));
+							color2 += String.fromCharCode(192 + (colorVal[1] >> 6)) + String.fromCharCode(192 + ((colorVal[1] >> 0) & 63));
+							color2 += String.fromCharCode(192 + (colorVal[2] >> 6)) + String.fromCharCode(192 + ((colorVal[2] >> 0) & 63));
+							color2 += String.fromCharCode(192 + (colorVal[3] || 0));
+							color2 += "]";
+
+
+						} else {
+
+							color2 += String.fromCharCode(colorVal + 192);
+						}
 					}
 					var prot = cd.protected;
-					//console.log(char, color, prot);
-					chunks.push(x, y, char, color2, prot);
+					var textProt = "";
+					for (var z = 0; z < cd.textProtected.length; z++) {
+						textProt += cd.textProtected[z] ? "1" : "0";
+					}
+
+					chunks.push(x, y, char, color2, prot, textProt);
 				}
 				send(ws, encodeMsgpack({
 					chunks: chunks
 				}));
 			} else if ("ce" == packetType) { // cursor
-				if (!sdata.isConnected) return;
-				// never send if on anonymous mode
 				if (anonymous.includes(sdata.clientId.toLowerCase())) return;
 				if (sdata.worldAttr.private && !sdata.isMember) return;
-				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
+				if (!isWhitelisted(sdata.authUser)) {
 					return;
 				}
+				if (!sdata.isAuthenticated && sdata.worldAttr.regonly) return;
 
 				if ("l" in data.ce) {
 					var x = data.ce.l[0];
@@ -1878,6 +3275,11 @@ function init_ws() {
 					if (col >= 0 && col <= 31) {
 						sdata.cursorColor = col;
 					}
+					if (Array.isArray(data.ce.c)) {
+						if (data.ce.c.length >= 3 && data.ce.c.every(c => typeof c === "number" && c >= 0 && c <= 255)) {
+							sdata.cursorColor = data.ce.c.slice(0, 3);
+						}
+					}
 				}
 				if ("n" in data.ce) {
 					sdata.cursorAnon = Boolean(data.ce.n);
@@ -1887,57 +3289,66 @@ function init_ws() {
 						id: sdata.clientId,
 						l: [sdata.cursorX, sdata.cursorY],
 						c: sdata.cursorColor,
-						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : "")
+						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : ""),
+						dn: sdata.displayName || ""
 					}
 				}), ws);
+
+
 			} else if ("e" == packetType) { // write edit
 				if (!sdata.isConnected) return;
 				var edits = data.e;
-
 				if (!Array.isArray(edits)) return;
+
 				if (canvasMuted(sdata) && !settings.adminList.includes(sdata.authUser) && sdata.authUser !== "textwall") {
-					// send an alert
-					send(ws, encodeMsgpack({
-						alert: "You are muted in canvas"
-					}))
+					send(ws, encodeMsgpack({ alert: "You are muted in canvas" }));
 					return;
 				}
-				/*if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {send(ws, encodeMsgpack({
-						alert: "You are not authorized"
-					}))
-					return;}*/
-		
+				if (sdata.worldAttr.regonly && !sdata.isAuthenticated) return;
 
 				if (sdata.worldAttr.readonly && !sdata.isMember) return;
 				if (sdata.worldAttr.private && !sdata.isMember) return;
 
 				var resp = [];
 				var ecount = 0;
+
 				for (var i = 0; i < edits.length; i++) {
 					var chunk = edits[i];
 					if (!Array.isArray(chunk)) continue;
-					var x = chunk[0];
-					var y = chunk[1];
-
-					if (typeof x != "number" || typeof y != "number") return;
+					var x = chunk[0], y = chunk[1];
 					if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 
-					var obj = [];
-					obj.push(x, y);
+					var obj = [x, y];
 					resp.push(obj);
+
 					for (var j = 0; j < Math.floor((chunk.length - 2) / 3); j++) {
 						if (ecount > rateLimits.e) return;
+
 						var chr = chunk[j * 3 + 2];
 						var idx = chunk[j * 3 + 3];
 						var colfmt = chunk[j * 3 + 4];
 
-						if (!Number.isInteger(chr)) return;
-						if (!Number.isInteger(idx)) return;
-						if (!Number.isInteger(colfmt)) return;
-						if (!(chr >= 1 && chr <= 1114111)) return;
-						if (!(idx >= 0 && idx <= (20 * 10) - 1)) return;
-						if (!(colfmt >= 0 && colfmt <= 960)) return;
+						if (!Number.isInteger(chr) || !Number.isInteger(idx)) return;
+						if (idx > 200) continue;
 
+
+						if (typeof colfmt === "number") {
+							if (colfmt > 992) continue;
+							if (chr > 1114111) continue;
+
+							if (chr >= 0xD800 && chr <= 0xDFFF) continue;
+						}
+
+						else if (Array.isArray(colfmt)) {
+							if (colfmt.length < 3) continue;
+
+							if (colfmt.length !== 4) colfmt.push(0);
+
+							if (typeof colfmt[3] !== "number") continue;
+							if (colfmt[3] > 0b1111) continue;
+							if (colfmt.some(c => typeof c !== "number" || c < 0 || c > 255)) continue;
+						}
+						else continue;
 						var stat = writeChunk(sdata.connectedWorldId, x, y, idx, chr, colfmt, sdata.isMember);
 						if (stat) {
 							obj.push(chr, idx, colfmt);
@@ -1947,454 +3358,339 @@ function init_ws() {
 				}
 
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-
-					e: {
-						e: resp,
-						clientId: sdata.clientId
-					}
+					e: { e: resp, clientId: sdata.clientId }
 				}));
-			} else if ("msg" == packetType) {
-				var message = data.msg;
+			}
+			else if (packetType === "msg") {
+				const rawMsg = data.msg;
+				let messageText;
+				let channel = "world";
 
-				if (typeof message != "string") return;
-				if (message.length > 256) return;
-				/*if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
-					send(ws, encodeMsgpack({
-						msg: ["[SERVER]", 4, "You are not authorized", true]
-					}));
+				if (typeof rawMsg === "string") {
+					messageText = rawMsg;
+				} else if (Array.isArray(rawMsg)) {
+					messageText = rawMsg[0];
+					const supplied = rawMsg[1];
+					channel = (typeof supplied === "string" && supplied.toLowerCase() === "global") ? "global" : "world";
+				} else {
 					return;
-				}*/
+				}
 
-				var nick = sdata.clientId;
+				if (typeof messageText !== "string" || messageText.length > 256) return;
+
+				let nick = sdata.isAuthenticated ? sdata.authUser : sdata.clientId;
+				var isAdmin = settings.adminList.includes(sdata.authUser);
+
+				if (sdata.worldAttr.disableChat && !sdata.isMember && sdata.worldAttr.readonly) return;
+				if (!sdata.isAuthenticated && sdata.worldAttr.regonly) return;
+
+				const isMuted = chatMutesByIP[sdata.ipAddr] || (sdata.isAuthenticated && chatMutesByUserIDs[sdata.authUserId]);
+				if (isMuted && sdata.authUser !== "textwall" && !isAdmin) {
+					return send(ws, encodeMsgpack({ msg: ["[SERVER]", 4, "You are muted", true, false, "selected_tab", "", Date.now()] }));
+				}
+				const sendChannelEncoded = (channelName, payloadObj, excludeWs = null) => {
+					const encoded = encodeMsgpack(payloadObj);
+					try {
+						if (channelName === "global") {
+							broadcast(encoded, excludeWs);
+						} else {
+							worldBroadcast(sdata.connectedWorldId, encoded, excludeWs);
+						}
+
+						if (payloadObj && Array.isArray(payloadObj.msg)) {
+							const [broadcastNick, , broadcastMsg] = payloadObj.msg;
+							const userTag = tags[sdata.authUserId.toString()] || "";
+							const colorStr = Array.isArray(sdata.cursorColor) ? sdata.cursorColor.join(",") : String(sdata.cursorColor || "0");
+							db.prepare(`
+            INSERT INTO chathistory 
+            (username, tag, isAdmin, isAuth, color, message, timestamp, world_id, channel) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+								broadcastNick,           // username
+								userTag,                 // tag
+								sdata.isAdmin == true ? 1 : 0,         // isAdmin
+								sdata.isAuthenticated == true ? 1 : 0,              // isAuth
+								colorStr,				// color
+								broadcastMsg,            // message
+								Date.now(),              // timestamp
+								sdata.connectedWorldId,  // world_id
+								channelName              // channel
+							);
+						}
+					} catch (err) {
+						console.error(`sendChannelEncoded ${channelName} error:`, err);
+					}
+				};
+				var tag = "";
 				if (sdata.isAuthenticated) {
-					nick = sdata.authUser;
+					const userTags = Object.entries(tags).filter(([userId, _]) => userId === sdata.authUserId.toString()).map(([_, tag]) => tag);
+					if (userTags.length > 0) {
+						tag = userTags.join(" ");
+					}
 				}
-				if (sdata.worldAttr.disableChat && !sdata.isMember) {
-					return;
-				}
-
-				if ((chatMutesByIP[sdata.ipAddr] || (sdata.isAuthenticated && chatMutesByUserIDs[sdata.authUserId])) && (sdata.authUser != "textwall") && (!settings.adminList.includes(sdata.authUser))) {
-					send(ws, encodeMsgpack({
-						msg: ["[SERVER]", 4, "You are muted", true]
-					}));
-					return;
-				}
+				const chatPayload = (nickName, colorIndex, msgText, isAuthFlag, isAdminFlag, channelName, displayNick = "") => ({
+					msg: [nickName, colorIndex, msgText, !!isAuthFlag, !!isAdminFlag, channelName, displayNick, Date.now(), tag]
+				});
 
 				let isCommand = false;
 				let commandResponse = "***";
-				if (settings.adminList.includes(sdata.authUser) && sdata.isAuthenticated) {
-					let parts = message.trim().split(/\s+/);
-					let command = parts[0].slice(1).toLowerCase();
-					let args = parts.slice(1);
-					if (message.startsWith("/")) {
-						if (command === "anonymous") {
-							// sussy among us
-							isCommand = true;
-							// admincheck
-							if (!settings.adminList.map(a => a.toLowerCase()).includes(sdata.authUser.toLowerCase())) {
-								commandResponse = "HAHA NO, YOU CANNOT GO ANONYMOUS!";
 
-							} else {
-								// decrease online count by 1 temporarily
-								onlineCount--;
-								broadcast(encodeMsgpack({
-									online: onlineCount
-								}), ws);
-								worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-									rc: sdata.clientId
-								}), ws);
-								delete clients[sdata.clientId];
-								setTimeout(() => { anonymous.push(sdata.clientId.toLowerCase()) }, 100);
-								commandResponse = "ANONYMOUS MODE: ON";
+				if (messageText.startsWith("/") && sdata.isAuthenticated && (isAdmin || (sdata.authUser === "textwall" || sdata.isModerator))) {
+					isCommand = true;
+					const parts = messageText.trim().split(/\s+/);
+					const command = parts[0].slice(1).toLowerCase();
+					const args = parts.slice(1);
+					const target = args[0] ? args[0].toLowerCase() : "";
 
-							}
+					const muteCommands = ["mute", "muteuser", "unmute", "unmuteuser", "canvasmute", "canvasmuteuser", "canvasunmute", "canvasunmuteuser", "fullmute", "fullmuteuser", "fullunmute", "fullunmuteuser"];
+					const adminOnlyCommands = ["anonymous", "deanonymous", "announcement", "newid", "fakemsg"];
 
-						} else if (command === "deanonymous") {
-							// damn it
-							isCommand = true;
-							let idx = anonymous.indexOf(sdata.clientId.toLowerCase());
-							if (idx !== -1) {
-								onlineCount++;
-								broadcast(encodeMsgpack({
-									online: onlineCount
-								}), ws);
-								clients[sdata.clientId] = ws;
-								anonymous.splice(idx, 1);
-								commandResponse = "ANONYMOUS MODE: OFF";
+					if (muteCommands.includes(command)) {
+						let foundCli = false;
+						const isUserCmd = command.includes("user");
+						const isUnmute = command.includes("unmute");
+						const doChat = !command.includes("canvas");
+						const doCanvas = command.includes("canvas") || command.includes("full");
 
-							} else {
-								commandResponse = "HEY, DUDE DON'T TRY TO BE SLICK!";
-							}
-						} else if (command === "announcement") {
-							isCommand = true;
-							var msg = args.join(" ").trim();
-							if (!msg) {
-								commandResponse = "SERIOUSLY?! WHAT DO YOU WANNA ANNOUNCE IF YOU DON'T GIVE ME A MESSAGE?";
-							} else {
-
-								// broadcast to all worlds
-								broadcast(encodeMsgpack({
-									msg: ["[ANNOUNCEMENT]", 2, msg, false]
-								}));
-								broadcast(encodeMsgpack({
-									alert: msg
-								}));
-								commandResponse = "Announcement sent";
-							}
-
-						} else if (command === "newid") {
-							isCommand = true;
-							let oldId = sdata.clientId;
-							let newId = parseInt(args[0], 0)
-							if (!newId) {
-								commandResponse = "HEY! YOU DIDN'T GIVE ME AN ID!";
-
-							} else if (isNaN(newId)) {
-								commandResponse = "HEY! THAT'S NOT A VALID ID!";
-							} else {
-								sdata.clientId = newId.toString();
-								clientRecord[sdata.clientId] = sdata;
-								delete clientRecord[oldId];
-								worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-									rc: oldId
-								}), ws);
-								dumpCursors(ws);
-								send(ws, encodeMsgpack({
-									id: sdata.clientId
-								}))
-								commandResponse = `Your ID has changed to ${sdata.clientId}`;
-							}
-						} else if (command === "fakemsg") {
-							isCommand = true;
-
-							if (!args || args.length === 0) {
-								commandResponse = "HEY! YOU DIDN'T GIVE ME ANY ARGUMENTS!";
-							} else {
-
-								let nick = args[0];
-								if (!nick || typeof nick !== "string") {
-									commandResponse = "HEY! INVALID NICKNAME!";
-								} else {
-									nick = nick.trim();
-									if (!nick) {
-										commandResponse = "HEY! INVALID NICKNAME!";
-									} else if (nick.length > 48) {
-										commandResponse = "HEY! THAT NAME IS TOO LONG!";
-									} else {
-
-										let color = args[1];
-										if (color === undefined || isNaN(Number(color))) {
-											commandResponse = "HEY! COLOR MUST BE A NUMBER!";
-										} else {
-											color = Number(color);
-
-
-											let auth = args[2];
-											if (typeof auth !== "string" || (auth.toLowerCase() !== "true" && auth.toLowerCase() !== "false")) {
-												commandResponse = "HEY! AUTH MUST BE 'true' OR 'false'!";
-											} else {
-												auth = auth.toLowerCase() === "true";
-
-
-												let msgParts = args.slice(3);
-												let msg = msgParts.join(" ").trim();
-
-												if (!msg) {
-													commandResponse = "HEY! YOU DIDN'T GIVE ME A MESSAGE TO SEND!";
-												} else if (msg.length > 255) {
-													commandResponse = "HEY! YOUR MESSAGE IS TOO LONG!";
-												} else {
-
-													try {
-														worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-															msg: [nick, color, msg, auth]
-														}));
-														commandResponse = "";
-													} catch (err) {
-														commandResponse = "ERROR: FAILED TO SEND MESSAGE! IT'S YOUR FAULT FOR SENDING SOMETHING WEIRD!";
-														console.error(err);
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-
-				}
-				if (sdata.authUser == "textwall" && sdata.isAuthenticated || settings.adminList.includes(sdata.authUser)) {
-					if (message.startsWith("/")) {
-						let parts = message.trim().split(/\s+/);
-						let command = parts[0].slice(1).toLowerCase();
-						let args = parts.slice(1);
-						if (command == "help") {
-							isCommand = true;
-							if (!settings.adminList.includes(sdata.authUser)) {
-								commandResponse = `Commands: /mute [id]; /muteuser [name]; /unmute [id]; /unmuteuser [name]; /canvasmute [id]; /canvasmuteuser [name]; /canvasunmute [id]; /canvasunmuteuser [name]; /fullmute [id]; /fullmuteuser [name]; /fullunmute [id]; /fullunmuteuser [name]; /listmutes; /help`;
-							} else {
-								commandResponse = `Commands: /mute [id]; /muteuser [name]; /unmute [id]; /unmuteuser [name]; /canvasmute [id]; /canvasmuteuser [name]; /canvasunmute [id]; /canvasunmuteuser [name]; /fullmute [id]; /fullmuteuser [name]; /fullunmute [id]; /fullunmuteuser [name]; /listmutes; /fakemsg [nick] [colorindex] [auth] [msg]; /help; /anonymous; /deanonymous; /announcement [message]; /newid [id]`;
-							}
-
-						} else if (
-							command == "mute" || command == "muteuser" ||
-							command == "unmute" || command == "unmuteuser" ||
-							command == "canvasmute" || command == "canvasmuteuser" ||
-							command == "canvasunmute" || command == "canvasunmuteuser" ||
-							command == "fullmute" || command == "fullmuteuser" ||
-							command == "fullunmute" || command == "fullunmuteuser"
-						) {
-							isCommand = true;
-							let target = args[0] || "";
-							let foundCli = false;
-
-							//
-							// 🔹 CHAT MUTE
-							//
-							if (command == "mute") {
-								let cli = clientRecord[target];
-								if (cli) {
-									chatMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId];
-									muteMutated = true;
-									foundCli = true;
-								}
-							} else if (command == "muteuser") {
-								for (let cid in clientRecord) {
-									let cli = clientRecord[cid];
-									if (cli && cli.authUser.toLowerCase() == target.toLowerCase()) {
-										chatMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser];
-										muteMutated = true;
-										foundCli = true;
-									}
-								}
-							} else if (command == "unmute") {
-								for (let m in chatMutesByIP) {
-									if (chatMutesByIP[m][1] == target) {
-										delete chatMutesByIP[m];
-										muteMutated = true;
-										foundCli = true;
-									}
-								}
-							} else if (command == "unmuteuser") {
-								for (let m in chatMutesByUserIDs) {
-									if (chatMutesByUserIDs[m][1].toLowerCase() == target.toLowerCase()) {
-										delete chatMutesByUserIDs[m];
-										muteMutated = true;
-										foundCli = true;
-									}
-								}
-							}
-
-							//
-							// 🔹 CANVAS MUTE
-							//
-							else if (command == "canvasmute") {
-								let cli = clientRecord[target];
-								if (cli) {
-									canvasMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId];
-									canvasMuteMutated = true;
-									foundCli = true;
-								}
-							} else if (command == "canvasmuteuser") {
-								for (let cid in clientRecord) {
-									let cli = clientRecord[cid];
-									if (cli && cli.authUser.toLowerCase() == target.toLowerCase()) {
-										canvasMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser];
-										canvasMuteMutated = true;
-										foundCli = true;
-									}
-								}
-							} else if (command == "canvasunmute") {
-								for (let m in canvasMutesByIP) {
-									if (canvasMutesByIP[m][1] == target) {
-										delete canvasMutesByIP[m];
-										canvasMuteMutated = true;
-										foundCli = true;
-									}
-								}
-							} else if (command == "canvasunmuteuser") {
-								for (let m in canvasMutesByUserIDs) {
-									if (canvasMutesByUserIDs[m][1].toLowerCase() == target.toLowerCase()) {
-										delete canvasMutesByUserIDs[m];
-										canvasMuteMutated = true;
-										foundCli = true;
-									}
-								}
-							}
-
-							//
-							// 🔹 FULL MUTE (chat + canvas)
-							//
-							else if (command == "fullmute" || command == "fullmuteuser") {
-								// just call both
-								if (command == "fullmute") {
-									let cli = clientRecord[target];
-									if (cli) {
-										chatMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId];
-										canvasMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId];
-										muteMutated = true;
-										canvasMuteMutated = true;
-										foundCli = true;
-									}
-								} else if (command == "fullmuteuser") {
+						if (!target) {
+							commandResponse = "MUTE NOBODY? OKAY, MUTING NOBODY!";
+						} else if (target === sdata.authUser.toLowerCase()) {
+							commandResponse = "MUTE YOURSELF? OKAY, SUIT YOURSELF!";
+						} else if (target === "textwall" || settings.adminList.includes(target)) {
+							commandResponse = "MUTE AN ADMIN? OKAY, SUIT YOURSELF!";
+						} else {
+							if (isUserCmd) {
+								if (!isUnmute) {
 									for (let cid in clientRecord) {
 										let cli = clientRecord[cid];
-										if (cli && cli.authUser.toLowerCase() == target.toLowerCase()) {
-											chatMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser];
-											canvasMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser];
-											muteMutated = true;
-											canvasMuteMutated = true;
+										if (cli && cli.authUser.toLowerCase() === target) {
+											if (doChat) { chatMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser]; muteMutated = true; }
+											if (doCanvas) { canvasMutesByUserIDs[cli.authUserId] = [Date.now(), cli.authUser]; canvasMuteMutated = true; }
 											foundCli = true;
 										}
 									}
-								}
-							} else if (command == "fullunmute" || command == "fullunmuteuser") {
-								if (command == "fullunmute") {
-									for (let m in chatMutesByIP) {
-										if (chatMutesByIP[m][1] == target) {
-											delete chatMutesByIP[m];
-											muteMutated = true;
-											foundCli = true;
-										}
-									}
-									for (let m in canvasMutesByIP) {
-										if (canvasMutesByIP[m][1] == target) {
-											delete canvasMutesByIP[m];
-											canvasMuteMutated = true;
-											foundCli = true;
-										}
-									}
-								} else if (command == "fullunmuteuser") {
+								} else {
 									for (let m in chatMutesByUserIDs) {
-										if (chatMutesByUserIDs[m][1].toLowerCase() == target.toLowerCase()) {
-											delete chatMutesByUserIDs[m];
-											muteMutated = true;
-											foundCli = true;
+										if (doChat && chatMutesByUserIDs[m][1].toLowerCase() === target) {
+											delete chatMutesByUserIDs[m]; muteMutated = true; foundCli = true;
 										}
 									}
 									for (let m in canvasMutesByUserIDs) {
-										if (canvasMutesByUserIDs[m][1].toLowerCase() == target.toLowerCase()) {
-											delete canvasMutesByUserIDs[m];
-											canvasMuteMutated = true;
-											foundCli = true;
+										if (doCanvas && canvasMutesByUserIDs[m][1].toLowerCase() === target) {
+											delete canvasMutesByUserIDs[m]; canvasMuteMutated = true; foundCli = true;
+										}
+									}
+								}
+							} else {
+								if (!isUnmute) {
+									let cli = clientRecord[target];
+									if (cli) {
+										if (doChat) { chatMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId]; muteMutated = true; }
+										if (doCanvas) { canvasMutesByIP[cli.ipAddr] = [Date.now(), cli.clientId]; canvasMuteMutated = true; }
+										foundCli = true;
+									}
+								} else {
+									for (let m in chatMutesByIP) {
+										if (doChat && chatMutesByIP[m][1] === target) {
+											delete chatMutesByIP[m]; muteMutated = true; foundCli = true;
+										}
+									}
+									for (let m in canvasMutesByIP) {
+										if (doCanvas && canvasMutesByIP[m][1] === target) {
+											delete canvasMutesByIP[m]; canvasMuteMutated = true; foundCli = true;
 										}
 									}
 								}
 							}
-							if (foundCli) {
-								commandResponse =
-									command.includes("unmute") ?
-										`${command.includes("canvas") ? "Canvas" : command.includes("full") ? "Fully" : "Un"}-unmuted - ${target}` :
-										`${command.includes("canvas") ? "Canvas" : command.includes("full") ? "Fully" : "Chat"}-muted - ${target}`;
-							} else {
-								commandResponse = `Client not found - ${target}`;
-							}
+							const typeStr = command.includes("canvas") ? "Canvas" : command.includes("full") ? "Fully" : "Chat";
+							commandResponse = foundCli ? `${typeStr}-${isUnmute ? "unmuted" : "muted"} - ${target}` : `Client not found - ${target}`;
+						}
 
-							if (target == sdata.authUser.toLowerCase()) {
-								commandResponse = "MUTE YOURSELF? OKAY, SUIT YOURSELF!";
-							} else if (target == "") {
-								commandResponse = "MUTE NOBODY? OKAY, MUTING NOBODY!";
-							} else if (target == "textwall") {
-								commandResponse = "MUTE TEXTWALL? OKAY, SUIT YOURSELF!"
-							} else if (settings.adminList.includes(target)) {
-								commandResponse = "MUTE AN ADMIN? OKAY, SUIT YOURSELF!"
-							}
+					} else if (command === "help" || command === "online") {
+						if (command === "help") {
+							commandResponse = isAdmin
+								? `Commands: /mute [id]; /muteuser [name]; /unmute [id]; /unmuteuser [name]; /canvasmute [id]; /canvasmuteuser [name]; /canvasunmute [id]; /canvasunmuteuser [name]; /fullmute [id]; /fullmuteuser [name]; /fullunmute [id]; /fullunmuteuser [name]; /listmutes; /fakemsg [nick] [colorindex] [auth] [msg]; /help; /anonymous; /deanonymous; /announcement [message]; /newid [id]`
+								: `Commands: /mute [id]; /muteuser [name]; /unmute [id]; /unmuteuser [name]; /canvasmute [id]; /canvasmuteuser [name]; /canvasunmute [id]; /canvasunmuteuser [name]; /fullmute [id]; /fullmuteuser [name]; /fullunmute [id]; /fullunmuteuser [name]; /listmutes; /help`;
+						} else {
+							const onlineUsers = Object.values(clients)
+								.map(c => c.sdata)
+								.filter(c => c?.isConnected)
+								.map(c => ({
+									n: c.isAuthenticated ? c.authUser : c.clientId,
+									w: c.connectedWorldNamespace,
+									wn: c.connectedWorldName
+								}));
 
+							send(ws, encodeMsgpack({ msg: ["[O]", 10, onlineUsers.length === 1 ? "Online client:" : "Online clients:", true] }));
+							onlineUsers.forEach(u => {
+								send(ws, encodeMsgpack({ msg: ["[O]", 10, !isAdmin ? u.n : `${u.n} ~${u.w} (${u.wn})`, true] }));
+							});
+						}
 
-							else if (command === "online") {
-								isCommand = true;
-								// show all online users
-								let onlineUsers = [];
-								for (let cid in clients) {
-									let cli = clients[cid].sdata;
-									if (cli && cli.isConnected) {
-										let onick = cli.isAuthenticated ? cli.authUser : cli.clientId;
-										let world = cli.connectedWorldNamespace
-										let worldName = cli.connectedWorldName
-										// push
-										onlineUsers.push({ n: onick, w: world, wn: worldName });
+					} else if (adminOnlyCommands.includes(command) && isAdmin) {
+						switch (command) {
+							case "anonymous":
+								if (!settings.adminList.map(a => a.toLowerCase()).includes(sdata.authUser.toLowerCase())) {
+									commandResponse = "HAHA NO, YOU CANNOT GO ANONYMOUS!";
+								} else {
+									onlineCount--;
+									try { broadcast(encodeMsgpack({ online: onlineCount }), ws); } catch (e) { console.error(e); }
+									try { worldBroadcast(sdata.connectedWorldId, encodeMsgpack({ rc: sdata.clientId }), ws); } catch (e) { console.error(e); }
+									delete clients[sdata.clientId];
+									setTimeout(() => { anonymous.push(sdata.clientId.toLowerCase()); }, 100);
+									commandResponse = "ANONYMOUS MODE: ON";
+								}
+								break;
+
+							case "deanonymous":
+								const idx = anonymous.indexOf(sdata.clientId.toLowerCase());
+								if (idx !== -1) {
+									onlineCount++;
+									try { broadcast(encodeMsgpack({ online: onlineCount }), ws); } catch (e) { console.error(e); }
+									clients[sdata.clientId] = ws;
+									anonymous.splice(idx, 1);
+									commandResponse = "ANONYMOUS MODE: OFF";
+								} else {
+									commandResponse = "HEY, DUDE DON'T TRY TO BE SLICK!";
+								}
+								break;
+
+							case "announcement":
+								const msg = args.join(" ").trim();
+								if (!msg) {
+									commandResponse = "SERIOUSLY?! WHAT DO YOU WANNA ANNOUNCE IF YOU DON'T GIVE ME A MESSAGE?";
+								} else {
+									try {
+										broadcast(encodeMsgpack({ msg: ["[ANNOUNCEMENT]", 2, msg, false, false, "global"] }));
+										broadcast(encodeMsgpack({ msg: ["[ANNOUNCEMENT]", 2, msg, false, false, "world"] }));
+										broadcast(encodeMsgpack({ alert: msg }));
+										saveToRecentAnnouncements(msg);
+										commandResponse = "Announcement sent";
+									} catch (err) {
+										console.error(err);
+										commandResponse = "ERROR: FAILED TO SEND ANNOUNCEMENT!";
 									}
 								}
-								if (onlineUsers.length === 1) {
-									send(ws, encodeMsgpack({ msg: ["[O]", 10, "Online client:", true] }))
-									send(ws, encodeMsgpack({ msg: ["[O]", 10, (!settings.adminList.includes(sdata.authUser) ? onlineUsers[0].n : (onlineUsers[0].n + " ~" + onlineUsers[0].w + " (" + onlineUsers[0].wn + ")")), true] }));
-									commandResponse = "***";
+								break;
+
+							case "newid":
+								const newId = parseInt(args[0], 10);
+								if (!newId) {
+									commandResponse = "HEY! YOU DIDN'T GIVE ME AN ID!"
 								} else {
-									send(ws, encodeMsgpack({ msg: ["[O]", 10, "Online clients:", true] }));
-									onlineUsers.forEach(onlineUser => {
-										send(ws, encodeMsgpack({ msg: ["[O]", 10, (!settings.adminList.includes(sdata.authUser) ? onlineUser.n : (onlineUser.n + " ~" + onlineUser.w + " (" + onlineUser.wn + ")")), true] }));
-									});
-									commandResponse = "***";
+									const oldId = sdata.clientId;
+									delete clients[sdata.clientId];
+									sdata.clientId = newId.toString();
+									sdata[sdata.clientId] = sdata
+									clientRecord[sdata.clientId] = sdata;
+									delete clientRecord[oldId];
+									try { worldBroadcast(sdata.connectedWorldId, encodeMsgpack({ rc: oldId }), ws); } catch (e) { console.error(e); }
+									dumpCursors(ws);
+									send(ws, encodeMsgpack({ id: sdata.clientId }));
+									commandResponse = `Your ID has changed to ${sdata.clientId}`;
 								}
-							}
-						}
-						else if (command === "listmutes") {
-							isCommand = true;
+								break;
 
-							let chatMuteList = [];
-							for (let ip in chatMutesByIP) {
-								let masked = mask_ip(ip)
-								let entry = chatMutesByIP[ip];
-								chatMuteList.push(`IP: ${masked} (ID: ${entry[1]})`);
-							}
-							for (let uid in chatMutesByUserIDs) {
-								let entry = chatMutesByUserIDs[uid];
-								chatMuteList.push(`UserID: ${uid} (Name: ${entry[1]})`);
-							}
-							// List canvas mutes
-							let canvasMuteList = [];
-							for (let ip in canvasMutesByIP) {
-								let masked = mask_ip(ip)
-								let entry = canvasMutesByIP[ip];
-								canvasMuteList.push(`IP: ${masked} (ID: ${entry[1]})`);
-							}
-							for (let uid in canvasMutesByUserIDs) {
-								let entry = canvasMutesByUserIDs[uid];
-								canvasMuteList.push(`UserID: ${uid} (Name: ${entry[1]})`);
-							}
-							// compose
-							send(ws, encodeMsgpack({ msg: ["[M]", 10, "Chat mutes:", true] }));
-							if (chatMuteList.length === 0) {
-								send(ws, encodeMsgpack({ msg: ["[M]", 10, "(none)", true] }));
-							} else {
-								chatMuteList.forEach(m => send(ws, encodeMsgpack({ msg: ["[M]", 10, m, true] })));
-							}
-							send(ws, encodeMsgpack({ msg: ["[M]", 10, "Canvas mutes:", true] }));
-							if (canvasMuteList.length === 0) {
-								send(ws, encodeMsgpack({ msg: ["[M]", 10, "(none)", true] }));
-							} else {
-								canvasMuteList.forEach(m => send(ws, encodeMsgpack({ msg: ["[M]", 10, m, true] })));
-							}
-							commandResponse = "***";
+							case "fakemsg":
+								if (args.length < 5) {
+									commandResponse = "HEY! YOU DIDN'T GIVE ME ANY ARGUMENTS!";
+									break;
+								}
+								const fNick = args[0].trim();
+								const fColor = Number(args[1]);
+								const fAuth = args[2].toLowerCase();
+								const fChnl = args[3].toLowerCase();
+								const fMsg = args.slice(4).join(" ").trim();
+
+								if (!fNick || fNick.length > 48) commandResponse = !fNick ? "HEY! INVALID NICKNAME!" : "HEY! THAT NAME IS TOO LONG!";
+								else if (isNaN(fColor)) commandResponse = "HEY! COLOR MUST BE A NUMBER!";
+								else if (fAuth !== "true" && fAuth !== "false") commandResponse = "HEY! AUTH MUST BE 'true' OR 'false'!";
+								else if (!fMsg || fMsg.length > 255) commandResponse = !fMsg ? "HEY! YOU DIDN'T GIVE ME A MESSAGE TO SEND!" : "HEY! YOUR MESSAGE IS TOO LONG!";
+								else {
+									try {
+										worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+											msg: [fNick, fColor, fMsg, fAuth === "true", false, ["world", "global"].includes(fChnl) ? fChnl : "world"]
+										}));
+										commandResponse = "";
+									} catch (err) {
+										console.error(err);
+										commandResponse = "ERROR: FAILED TO SEND MESSAGE! IT'S YOUR FAULT FOR SENDING SOMETHING WEIRD!";
+									}
+								}
+								break;
+						}
+					}
+
+					else if (command === "listmutes") {
+						isCommand = true;
+
+						let chatMuteList = [];
+						for (let ip in chatMutesByIP) {
+							let masked = mask_ip(ip)
+							let entry = chatMutesByIP[ip];
+							chatMuteList.push(`IP: ${masked} (ID: ${entry[1]})`);
+						}
+						for (let uid in chatMutesByUserIDs) {
+							let entry = chatMutesByUserIDs[uid];
+							chatMuteList.push(`UserID: ${uid} (Name: ${entry[1]})`);
 						}
 
+						let canvasMuteList = [];
+						for (let ip in canvasMutesByIP) {
+							let masked = mask_ip(ip)
+							let entry = canvasMutesByIP[ip];
+							canvasMuteList.push(`IP: ${masked} (ID: ${entry[1]})`);
+						}
+						for (let uid in canvasMutesByUserIDs) {
+							let entry = canvasMutesByUserIDs[uid];
+							canvasMuteList.push(`UserID: ${uid} (Name: ${entry[1]})`);
+						}
+						// compose
+						send(ws, encodeMsgpack({ msg: ["[M]", 10, "Chat mutes:", true] }));
+						if (chatMuteList.length === 0) {
+							send(ws, encodeMsgpack({ msg: ["[M]", 10, "(none)", true] }));
+						} else {
+							chatMuteList.forEach(m => send(ws, encodeMsgpack({ msg: ["[M]", 10, m, true] })));
+						}
+						send(ws, encodeMsgpack({ msg: ["[M]", 10, "Canvas mutes:", true] }));
+						if (canvasMuteList.length === 0) {
+							send(ws, encodeMsgpack({ msg: ["[M]", 10, "(none)", true] }));
+						} else {
+							canvasMuteList.forEach(m => send(ws, encodeMsgpack({ msg: ["[M]", 10, m, true] })));
+						}
+						commandResponse = "***";
 					}
 				}
+
+
+
 				if (!isCommand) {
 					var isAdmin = settings.adminList.map(a => a.toLowerCase()).includes(sdata.authUser.toLowerCase());
 					if (!anonymous.includes(sdata.clientId.toLowerCase())) {
-						worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-							msg: [nick, sdata.cursorColor, message, sdata.isAuthenticated, isAdmin]
-						}));
+
+
+
+						const payloadObj = chatPayload(nick, sdata.cursorColor, messageText, sdata.isAuthenticated, isAdmin, channel, sdata.displayName === nick ? null : sdata.displayName);
+
+						sendChannelEncoded(channel, payloadObj);
 					} else {
-						worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
-							msg: ["???", 0, message, false]
-						}));
+						const payloadObj = chatPayload("???", 0, messageText, false, false, channel);
+						sendChannelEncoded(channel, payloadObj);
 					}
 				} else if (commandResponse) {
 					send(ws, encodeMsgpack({
-						msg: ["[SERVER]", 4, commandResponse, true]
+						msg: ["[SERVER]", 4, commandResponse, true, false, "selected_tab", "", Date.now()]
 					}));
 				}
-			} else if ("register" == packetType) {
+			}
+			else if ("register" == packetType) {
 				if (sdata.isAuthenticated) return;
-				/*if (!sdata.isAuthenticated) {
+				if (!sdata.isAuthenticated && adminSettings.regclosed) {
 					send(ws, encodeMsgpack({
-						alert: "Registration is closed."
-					}));
+						noreg: true
+					}))
 					return
-				}*/
+				}
 				var cred = data.register;
 
 				if (!Array.isArray(cred)) return;
@@ -2460,6 +3756,26 @@ function init_ws() {
 
 				var userObj = db.prepare("SELECT * FROM 'users' WHERE username=? COLLATE NOCASE").get(user);
 				if (userObj) {
+					const ban = db.prepare(
+						"SELECT * FROM bans WHERE uid=?"
+					).get(userObj.id);
+
+					if (ban) {
+						if (ban.expires_at !== 0 && Date.now() > ban.expires_at) {
+							db.prepare("DELETE FROM bans WHERE uid=?").run(userObj.id);
+
+						} else {
+							send(ws, encodeMsgpack({
+								accbanned: {
+									expiresAt: ban.expires_at,
+									reason: ban.reason,
+									issuer: ban.issuer
+								}
+							}));
+							return;
+						}
+					}
+
 					var db_user = userObj.username;
 					var db_id = userObj.id;
 					var db_pass = userObj.password;
@@ -2475,7 +3791,9 @@ function init_ws() {
 						}));
 						sdata.authToken = newToken;
 						sdata.isAdmin = settings.adminList.includes(sdata.authUser)
+						sdata.isModerator = settings.moderatorList.includes(sdata.authUser)
 						send(ws, encodeMsgpack({ admin: sdata.isAdmin }));
+						send(ws, encodeMsgpack({ mod: sdata.isModerator }));
 						if (sdata.connectedWorldId) {
 							var isOwner = sdata.isAuthenticated && (
 								(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
@@ -2495,7 +3813,7 @@ function init_ws() {
 									return;
 								}
 								var memberCheck = db.prepare("SELECT * FROM members WHERE username=? COLLATE NOCASE AND world_id=?").get(sdata.authUser, sdata.connectedWorldId);
-								if (memberCheck) {
+								if (memberCheck || sdata.isModerator) {
 									send(ws, encodeMsgpack({
 										perms: 1
 									}));
@@ -2519,7 +3837,8 @@ function init_ws() {
 						id: sdata.clientId,
 						l: [sdata.cursorX, sdata.cursorY],
 						c: sdata.cursorColor,
-						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : "")
+						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : ""),
+						dn: sdata.displayName || "",
 					}
 				}), ws);
 			} else if ("token" == packetType) {
@@ -2544,8 +3863,15 @@ function init_ws() {
 					}));
 					sdata.isAuthenticated = true;
 					sdata.authUser = tokenData.username;
+					sdata.displayName = db.prepare("SELECT display_name FROM display_names WHERE user_id=?")?.get(userId)?.display_name || "";
 					sdata.authUserId = userId;
 					sdata.authToken = tokenData.token;
+					sdata.isAdmin = settings.adminList.includes(sdata.authUser)
+					sdata.isModerator = settings.moderatorList.includes(sdata.authUser)
+					send(ws, encodeMsgpack({ admin: sdata.isAdmin }));
+					send(ws, encodeMsgpack({ mod: sdata.isModerator }));
+
+					dumpCursors(ws);
 				} else {
 					send(ws, encodeMsgpack({
 						tokenfail: true
@@ -2558,20 +3884,25 @@ function init_ws() {
 				send(ws, encodeMsgpack({
 					perms: 0
 				}));
-				sdata.isAdmin = false
+				sdata.isAdmin = false;
+				sdata.isModerator = false;
 				send(ws, encodeMsgpack({ admin: false }));
+				send(ws, encodeMsgpack({ mod: false }));
 				sdata.isAuthenticated = false;
 				sdata.authUser = "";
 				sdata.authUserId = 0;
 				sdata.isMember = false;
+				sdata.displayName = "";
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					cu: {
 						id: sdata.clientId,
 						l: [sdata.cursorX, sdata.cursorY],
 						c: sdata.cursorColor,
-						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : "")
+						n: sdata.cursorAnon ? "" : (sdata.isAuthenticated ? sdata.authUser : ""),
+						dn: "",
 					}
 				}), ws);
+
 			} else if ("addmem" == packetType) {
 				var member = data.addmem;
 
@@ -2694,7 +4025,69 @@ function init_ws() {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					db: Boolean(data.db)
 				}));
-			} else if ("p" == packetType) { // protect
+			} else if ("un" == packetType) { // unlisted
+				var isOwner = sdata.isAuthenticated && (
+					(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
+					(settings.adminList && settings.adminList.includes(sdata.authUser))
+				);
+				if (!isOwner) return;
+				editWorldAttr(sdata.connectedWorldId, "unlisted", Boolean(data.un));
+				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+					un: Boolean(data.un)
+				}));
+			} else if ("nsfw" == packetType) { // nsfw
+				var isOwner = sdata.isAuthenticated && (
+					(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
+					(settings.adminList && settings.adminList.includes(sdata.authUser))
+				);
+				if (!isOwner) return;
+				editWorldAttr(sdata.connectedWorldId, "nsfw", Boolean(data.nsfw));
+				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+					nsfw: Boolean(data.nsfw)
+				}));
+			} else if ("regonly" == packetType) { // registered users only
+
+				var isOwner = sdata.isAuthenticated && (
+					(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
+					(settings.adminList && settings.adminList.includes(sdata.authUser))
+				);
+				if (!isOwner) return;
+				editWorldAttr(sdata.connectedWorldId, "regonly", Boolean(data.regonly));
+				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+					regonly: Boolean(data.regonly)
+				}));
+			} else if ("theme" === packetType) { // webhook
+				var themeData = data.theme;
+				if (!Array.isArray(themeData)) themeData = [false, null, null];
+
+				editWorldAttr(sdata.connectedWorldId, "theme", themeData);
+				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({ theme: themeData }));
+
+			} else if ("webhook" == packetType) { // webhook
+				var isOwner = sdata.isAuthenticated && (
+					(sdata.connectedWorldNamespace && sdata.connectedWorldNamespace.toLowerCase() == sdata.authUser.toLowerCase()) ||
+					(settings.adminList && settings.adminList.includes(sdata.authUser))
+				);
+				if (!isOwner) return;
+				var checked = Boolean(data.webhook);
+				if (checked) {
+					var newApiKey = generateWebhookToken();
+					db.prepare("INSERT INTO webhooks VALUES(?, ?)").run(sdata.connectedWorldId, newApiKey);
+					send(ws, encodeMsgpack({
+						webhook: [checked, newApiKey]
+					}));
+					editWorldAttr(sdata.connectedWorldId, "webhook", [checked, newApiKey]);
+				} else {
+					db.prepare("DELETE FROM webhooks WHERE world_id=?").run(sdata.connectedWorldId);
+					send(ws, encodeMsgpack({
+						webhook: [checked, null]
+					}));
+					editWorldAttr(sdata.connectedWorldId, "webhook", [checked, null]);
+				}
+				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
+					webhook: [checked, null]
+				}), ws);
+			} if ("p" == packetType) { // protect
 				var pos = data.p;
 				if (typeof pos != "string") return;
 				pos = pos.split(",");
@@ -2705,7 +4098,7 @@ function init_ws() {
 				if (y % 10 != 0) return;
 				x /= 20;
 				y /= 10;
-				if (!sdata.isMember) {
+				if (!sdata.isMember || !sdata.isModerator) {
 					return;
 				}
 				var prot = toggleProtection(sdata.connectedWorldId, x, y);
@@ -2714,6 +4107,54 @@ function init_ws() {
 				}
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					p: [(x * 20) + "," + (y * 10), Boolean(prot)]
+				}));
+			} else if ("tp" == packetType) { // text protect
+				/*
+				var pos = data.tp;
+				if (typeof pos != "string") return;
+				
+				pos = pos.split(",");
+				// console.log(pos);
+				if (pos.length != 2) return;
+				
+				x = san_nbr(pos[0]);
+				y = san_nbr(pos[1]);
+				y += 1;
+				
+				if (!sdata.isMember) return;
+				
+				var chunkX = Math.floor(x / 20);
+				var chunkY = Math.floor(y / 10);
+				
+				var tileX = x % 20;
+				var tileY = y % 10;
+				
+				var idx = tileY * 20 + tileX;
+				
+				var prot = toggleCellProtection(
+					sdata.connectedWorldId,
+					chunkX,
+					chunkY,
+					idx
+				);
+				
+				if (settings.log.enabled) {
+					fs.appendFile(
+						settings.log.path,
+						`textprotect;time=${new Date().toLocaleString()};newstate=${prot};worldid=${sdata.connectedWorldId};x=${x};y=${y};idx=${idx};ip=${ipAddr};user=${sdata.authUser};worldnamespace=${sdata.connectedWorldNamespace};worldname=${sdata.connectedWorldName}\n`,
+						function () { }
+					);
+				}
+				
+				worldBroadcast(
+					sdata.connectedWorldId,
+					encodeMsgpack({
+						tp: [x + "," + y, Boolean(prot)]
+					})
+				);
+				*/
+				send(ws, encodeMsgpack({
+					not_implemented: "Text protection is not implemented yet."
 				}));
 			} else if ("dw" == packetType) {
 				var isOwner = sdata.isAuthenticated && (
@@ -2838,7 +4279,7 @@ function init_ws() {
 				y /= 10;
 				x = Math.floor(x);
 				y = Math.floor(y);
-				if (!sdata.isMember) {
+				if (!sdata.isMember || !sdata.isModerator) {
 					return;
 				}
 				clearChunk(sdata.connectedWorldId, x, y);
@@ -2853,64 +4294,363 @@ function init_ws() {
 				send(ws, encodeMsgpack({
 					pong: true
 				}));
-			}
-			else {
-				//console.log(data)
-			}
+			} else if ("nick" == packetType) {
+				var newNick = data.nick.trim();
+				if (typeof newNick != "string") return;
+				if (newNick.length > 64) return;
+
+				// make new nick for user
+				db.prepare("INSERT OR REPLACE INTO display_names (user_id, display_name) VALUES ((SELECT id FROM users WHERE username=? COLLATE NOCASE), ?)").run(sdata.authUser, newNick);
+				sdata.displayName = newNick;
+				send(ws, encodeMsgpack({
+					dn: newNick
+				}));
+				dumpCursors(ws);
+			} else
+				if (packetType === "type") {
+					const userId = sdata.userId;
+
+					const channel = data.chatChannel || "world";
+
+					const key = (channel === "global") ? "global" : sdata.connectedWorldId;
+					const isTyping = Boolean(data.typing);
+
+					if (!typingUsers[key]) typingUsers[key] = {};
+
+					if (typingUsers[key][userId]?.timeoutId) {
+						clearTimeout(typingUsers[key][userId].timeoutId);
+					}
+
+					if (isTyping) {
+						typingUsers[key][userId] = {
+							id: userId,
+							name: sdata.authUser || `${sdata.clientId}`,
+							timeoutId: setTimeout(() => {
+								delete typingUsers[key][userId];
+								broadcastTyping(key, channel);
+							}, 5000)
+						};
+					} else {
+						delete typingUsers[key][userId];
+					}
+
+					broadcastTyping(key, channel);
+				}
+
+
+				else if ("cmd" == packetType) {
+					const cmd = data.cmd;
+					const id = cmd.sendId || true;
+					const cmdData = cmd.data;
+					if (typeof cmdData != "string") return;
+					const payload = {
+						cmd: {
+							data: cmdData
+						}
+					};
+					if (id) {
+						payload.cmd.id = sdata.clientId;
+					}
+					if (sdata.connectedWorldId) {
+						command_output_broadcast(sdata.connectedWorldId, payload);
+					}
+				} else if ("cmd_opt" == packetType) {
+					const enabled = data.cmd_opt;
+					sdata.command_output_enabled = enabled;
+				} else if (packetType === "ban") {
+					if (!sdata.isAdmin) return;
+
+					const banData = data.ban;
+
+					if (!Array.isArray(banData)) return;
+					if (banData.length < 5) return;
+
+					const [expiresAt, reason, issuer, type, value] = banData;
+
+					if (typeof reason !== "string") return;
+					if (typeof issuer !== "string") return;
+					if (typeof value !== "string") return;
+
+					if (type !== "username" && type !== "userId") return;
+
+					let uidToBan = null;
+
+					if (type === "username") {
+						const user = db.prepare(
+							"SELECT * FROM users WHERE username=? COLLATE NOCASE"
+						).get(value);
+
+						if (!user) return;
+						uidToBan = user.id;
+					} else {
+						const user = db.prepare(
+							"SELECT * FROM users WHERE id=?"
+						).get(value);
+
+						if (!user) return;
+						uidToBan = user.id;
+					}
+
+					db.prepare(`
+        INSERT INTO bans (uid, expires_at, reason, issuer)
+        VALUES (?, ?, ?, ?)
+    `).run(uidToBan, expiresAt, reason, issuer);
+
+					wss.clients.forEach(sock => {
+						if (!sock?.sdata) return;
+						if (sock.sdata.authUserId === uidToBan) {
+							evictClient(sock);
+						}
+					});
+				}
+				else if (packetType === "unban") {
+					if (!sdata.isAdmin) return;
+
+					const unbanData = data.unban;
+					if (!Array.isArray(unbanData)) return;
+					if (unbanData.length < 2) return;
+
+					const [type, value] = unbanData;
+
+					if (type !== "username" && type !== "userId") return;
+					if (typeof value !== "string") return;
+
+					let user = null;
+
+					if (type === "username") {
+						user = db.prepare(
+							"SELECT id FROM users WHERE username=? COLLATE NOCASE"
+						).get(value);
+					} else {
+						const id = Number(value);
+						if (!Number.isInteger(id)) return;
+
+						user = db.prepare(
+							"SELECT id FROM users WHERE id=?"
+						).get(id);
+					}
+
+					if (!user) return;
+
+					db.prepare(
+						"DELETE FROM bans WHERE uid=?"
+					).run(user.id);
+				}
+
+
+				else {
+					//console.log(data);
+				}
 
 		});
 
 		ws.on("close", function () {
 			closed = true;
 			onlineCount--;
+			anonymous = anonymous.filter(a => a != sdata.clientId);
+
 			broadcast(encodeMsgpack({
 				online: onlineCount
 			}), ws);
-            delete clients[sdata.clientId];
+
+			delete clients[sdata.clientId];
+			// admin couldve changed their id
+			delete clients[sdata.newClientId]
 			if (sdata && sdata.isConnected) {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					rc: sdata.clientId
 				}), ws);
-				
+
 			}
-			
+
 
 			connObj[0]--;
 		});
 		ws.on("error", function () {
 			console.log("Client error");
 		});
+
 	});
 }
 
 
 async function initServer() {
-	if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='server_info'").get()) {
-		db.prepare("CREATE TABLE 'server_info' (name TEXT, value TEXT)").run();
+	function ensureTable(name, sql) {
+		const exists = db.prepare(`
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table' AND name=?
+    `).get(name);
 
+		if (!exists) {
+			db.prepare(sql).run();
+		}
+	}
 
-		db.prepare("CREATE TABLE 'worlds' (id INTEGER NOT NULL PRIMARY KEY, namespace TEXT, name TEXT, attributes TEXT)").run();
-		db.prepare("CREATE TABLE 'users' (id INTEGER NOT NULL PRIMARY KEY, username TEXT, password TEXT, date_joined INTEGER)").run();
-		db.prepare("CREATE TABLE 'tokens' (token TEXT, username TEXT, user_id INTEGER NOT NULL)").run();
-		db.prepare("CREATE TABLE 'members' (world_id INTEGER, username TEXT)").run();
-		db.prepare("CREATE TABLE 'chunks' (world_id INTEGER NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, text TEXT, colorFmt TEXT, protected INTEGER)").run();
+	function ensureIndex(name, sql) {
+		const exists = db.prepare(`
+        SELECT name
+        FROM sqlite_master
+        WHERE type='index' AND name=?
+    `).get(name);
 
-		db.prepare("CREATE INDEX 'ic' ON 'chunks' (world_id, x, y)").run();
-		db.prepare("CREATE INDEX 'iu' ON 'users' (username)").run();
-		db.prepare("CREATE INDEX 'it' ON 'tokens' (token)").run();
-		db.prepare("CREATE INDEX 'im' ON 'members' (world_id)").run();
-		db.prepare("CREATE INDEX 'im2' ON 'members' (world_id, username)").run();
-		db.prepare("CREATE INDEX 'iw' ON 'worlds' (namespace)").run();
-		db.prepare("CREATE INDEX 'iw2' ON 'worlds' (namespace, name)").run();
+		if (!exists) {
+			db.prepare(sql).run();
+		}
+	}
 
-		db.prepare("INSERT INTO 'worlds' VALUES(null, ?, ?, ?)").run("textwall", "main", JSON.stringify({
-			readonly: false,
-			private: false,
-			hideCursors: false,
-			disableChat: false,
-			disableColor: false,
-			disableBraille: false
-		}));
+	/* =========================
+	   TABLES
+	========================= */
+
+	ensureTable("display_names", `
+    CREATE TABLE display_names (
+        user_id INTEGER PRIMARY KEY,
+        display_name TEXT
+    )
+`);
+
+	ensureTable("admin_sessions", `
+    CREATE TABLE admin_sessions (
+        username TEXT,
+        token TEXT,
+        expires_at INTEGER
+    )
+`);
+
+	ensureTable("server_info", `
+    CREATE TABLE server_info (
+        name TEXT,
+        value TEXT
+    )
+`);
+
+	ensureTable("worlds", `
+    CREATE TABLE worlds (
+        id INTEGER PRIMARY KEY,
+        namespace TEXT,
+        name TEXT,
+        attributes TEXT
+    )
+`);
+
+	ensureTable("users", `
+    CREATE TABLE users (
+        id INTEGER PRIMARY KEY,
+        username TEXT,
+        password TEXT,
+        date_joined INTEGER
+    )
+`);
+
+	ensureTable("tokens", `
+    CREATE TABLE tokens (
+        token TEXT,
+        username TEXT,
+        user_id INTEGER NOT NULL
+    )
+`);
+
+	ensureTable("members", `
+    CREATE TABLE members (
+        world_id INTEGER,
+        username TEXT
+    )
+`);
+
+	ensureTable("chunks", `
+    CREATE TABLE chunks (
+        world_id INTEGER NOT NULL,
+        x INTEGER NOT NULL,
+        y INTEGER NOT NULL,
+        text TEXT,
+        colorFmt TEXT,
+        protected INTEGER,
+        text_protected TEXT
+    )
+`);
+
+	ensureTable("bans", `
+    CREATE TABLE bans (
+        uid INTEGER PRIMARY KEY,
+        expires_at INTEGER,
+        reason TEXT,
+        issuer TEXT
+    )
+`);
+	ensureTable("chathistory", `
+    CREATE TABLE chathistory (
+        username TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        isAdmin INTEGER NOT NULL,
+        isAuth INTEGER NOT NULL,
+        color TEXT NOT NULL,
+        message TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        world_id INTEGER NOT NULL,
+        channel TEXT NOT NULL
+    )
+`);
+	ensureTable("webhooks", `
+		CREATE TABLE webhooks (
+		world_id INTEGER PRIMARY KEY,
+		api_key TEXT NOT NULL
+	)
+		`)
+
+	/* =========================
+	   INDEXES
+	========================= */
+
+	ensureIndex("ic", `
+    CREATE INDEX ic ON chunks (world_id, x, y)
+`);
+
+	ensureIndex("iu", `
+    CREATE INDEX iu ON users (username)
+`);
+
+	ensureIndex("it", `
+    CREATE INDEX it ON tokens (token)
+`);
+
+	ensureIndex("im", `
+    CREATE INDEX im ON members (world_id)
+`);
+
+	ensureIndex("im2", `
+    CREATE INDEX im2 ON members (world_id, username)
+`);
+
+	ensureIndex("iw", `
+    CREATE INDEX iw ON worlds (namespace)
+`);
+
+	ensureIndex("iw2", `
+    CREATE INDEX iw2 ON worlds (namespace, name)
+`);
+
+	const mainWorld = db.prepare(`
+    SELECT id FROM worlds
+    WHERE namespace=? AND name=?
+`).get("textwall", "main");
+
+	if (!mainWorld) {
+		db.prepare(`
+        INSERT INTO worlds
+        VALUES (null, ?, ?, ?)
+    `).run(
+			"textwall",
+			"main",
+			JSON.stringify({
+				readonly: false,
+				private: false,
+				hideCursors: false,
+				disableChat: false,
+				disableColor: false,
+				disableBraille: false
+			})
+		);
 	}
 	runserver();
 }
@@ -2984,11 +4724,39 @@ function clearChunkV2(worldId, chunkX, chunkY, isMember = true) {
 
 	return true;
 }
+var banInt = setInterval(() => {
+	const now = Date.now();
+	db.prepare(`
+        DELETE FROM bans
+        WHERE expires_at > 0 AND expires_at <= ?
+    `).run(now);
+
+	const activeBans = db.prepare("SELECT uid FROM bans").all().map(b => b.uid);
+
+	wss.clients.forEach(ws => {
+		if (!ws.sdata) return;
+
+		if (ipBans.includes(ws.sdata.ipAddr)) {
+			ws.close(1000, "IP-banned");
+			return;
+		}
+
+		if (ws.sdata.isAuthenticated && activeBans.includes(ws.sdata.authUserId)) {
+			send(ws, encodeMsgpack({
+				alert: "Your account has been banned."
+			}))
+		}
+	});
+}, 1000);
+
 
 process.once("SIGINT", function () {
 	console.log("Server is closing, saving...");
 	clearInterval(memClrInterval);
 	clearInterval(saveMuteInterval);
+	clearInterval(banInt);
 	commitChunks();
 	process.exit();
 });
+
+loadAdminSessions();

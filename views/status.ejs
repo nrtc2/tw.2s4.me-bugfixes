@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= statusCode %></title>
+    <link rel="stylesheet" href="/admin/admin.css">
+    <style>
+        body, html {
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .status-container {
+            width: 100%;
+            max-width: 550px;
+            text-align: center;
+        }
+
+        .error-code {
+            font-size: 64px;
+            color: #1e5bb8;
+            margin-bottom: 0;
+            line-height: 1;
+            text-shadow: 0 0 10px rgba(30, 91, 184, 0.5);
+        }
+
+        .terminal-box {
+            background-color: #050505;
+            border: 1px solid #333;
+            padding: 20px;
+            text-align: left;
+            margin-top: 20px;
+            box-shadow: inset 0 0 15px #000;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background: #0f0;
+            margin-left: 5px;
+            animation: blink 1s infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <% 
+        // Logic to handle different codes
+        const statusMap = {
+            400: { title: "Bad Request", msg: "The server cannot process the request due to invalid syntax." },
+            401: { title: "Unauthorized", msg: "Authentication is required to access this resource." },
+            403: { title: "Access Forbidden", msg: "Administrative privileges required. Access denied." },
+            404: { title: "Not Found", msg: "The requested resource could not be located on this server." },
+            500: { title: "Internal Server Error", msg: "The server encountered an unexpected condition." },
+            503: { title: "Service Unavailable", msg: "The server is currently overloaded or down for maintenance." }
+        };
+
+        const info = statusMap[statusCode] || { title: "Unknown Error", msg: "An unspecified system error has occurred." };
+    %>
+
+    <div class="status-container">
+        <h1 class="error-code"><%= statusCode %></h1>
+        <h2><%= info.title %></h2>
+        
+        <div class="terminal-box">
+            <p style="color: #888;"><%= info.msg %></p>
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="page-btn" onclick="window.location.href='/admin/'">DASHBOARD</button>
+                <button onclick="history.back()">BACK</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

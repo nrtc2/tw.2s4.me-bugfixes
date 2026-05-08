@@ -1,15 +1,24 @@
 {
-	"port": 8080,
-	"useStatic": true,
-	"db": {
-		"path": "../data/data.sqlite3",
-		"chatMutePath": "../data/chat_mutes.json",
-		"canvasMutePath": "../data/canvas_mutes.json",
-		"whitelistPath": "../data/whitelist.json"
-	},
-	"log": {
-		"enabled": false,
-		"path": "./log.txt"
-	},
-	"adminList": ["h"]
+    "port": 8080,
+    "useStatic": true,
+    "db": {
+        "path": "../data/data.sqlite3",
+        "chatMutePath": "../data/chat_mutes.json",
+        "canvasMutePath": "../data/canvas_mutes.json",
+        "whitelistPath": "../data/whitelist.json",
+        "onWorldScriptsPath": "../data/on_world_scripts.json",
+        "starterScriptsPath": "../data/starter_scripts.json",
+        "ipBansPath": "../data/ip_bans.json",
+        "adminSettings": "../data/admin_settings.json",
+        "tagsPath": "../data/tags.json"
+    },
+    "log": {
+        "enabled": false,
+        "path": "./log.txt"
+    },
+    "maintenance": false,
+    "maintenanceMsg": "The site is currently under maintenance. We apologize for the inconvenience.",
+    "adminList": [],
+    "moderatorList": [],
+    "version": "3.0.0"
 }

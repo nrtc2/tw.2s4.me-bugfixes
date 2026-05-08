@@ -1,6 +1,7 @@
 node_modules/
 data/*.sql*
 data/*.db*
+data/.htaccess
 data/settings.json
 package-lock.json
 /.vscode

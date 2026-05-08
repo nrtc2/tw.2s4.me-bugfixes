@@ -2,6 +2,7 @@
 
 The original production code has been adapted to be runnable by a wider variety of willing instance operators for TWR (Textwall Ripoff). Contributions are welcome.
 
+
 ## Prerequisites
 1. Node.js (preferrably >= v20)
 
@@ -17,3 +18,9 @@ The original production code has been adapted to be runnable by a wider variety 
 - tw.2s4.me was created following its temporary shutdown in 2023
 - The server code was written from scratch based on acquired knowledge of the protocol
 
+## Admin
+To sign up, You'll be met with a setup to create your admin account on first access to the admin panel. After that, you can log in with the credentials you created. The admin panel allows you to manage posts, users, and view logs.
+If it's your first time, you'll be prompted to create an admin account. Fill in the required details and submit the form.
+
+## License
+MIT

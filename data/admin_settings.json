@@ -1,10 +1,60 @@
 {
     "regclosed": false,
     "l": false,
-    "script_settings": {
-        "starter_scripts": false,
-        "world_scripts": false
+    "rateLimit": true,
+    "rateLimits": {
+        "j": 8,
+        "r": 7,
+        "ce": 22,
+        "e": 77,
+        "msg": 2,
+        "register": 1,
+        "login": 2,
+        "token": 15,
+        "logout": 5,
+        "addmem": 5,
+        "rmmem": 5,
+        "deleteaccount": 1,
+        "ro": 9,
+        "priv": 9,
+        "ch": 9,
+        "dc": 9,
+        "dcl": 9,
+        "db": 9,
+        "un": 9,
+        "p": 9,
+        "tp": 200,
+        "dw": 2,
+        "namechange": 1,
+        "passchange": 1,
+        "c": 15,
+        "ping": 60000000000000000000,
+        "nick": 3,
+        "type": 5,
+        "cmd": 5,
+        "cmd_opt": 5,
+        "ban": 1,
+        "unban": 1,
+        "nsfw": 5,
+        "regonly": 5,
+        "webhook": 1
     },
-    "ratelimit": true,
-    "max_scripts": 6
+    "webhookRatelimits": {
+        "edit": 20,
+        "clear": 10,
+        "protect": 10,
+        "private": 1,
+        "readonly": 1,
+        "hide_cursors": 1,
+        "disable_chat": 1,
+        "disable_color": 1,
+        "disable_braille": 1,
+        "unlisted": 1,
+        "nsfw": 1,
+        "registered_only": 1
+    },
+    "max_scripts": 6,
+    "discordWebhooks": {
+        "report": "https://discord.com/api/webhooks/1501224431429750824/zTwtiL4lKXhFJWy2nRCVS_xdOSFQexrdp4iIih_01kYQ7DWUWmt4gdIVKf_cMtwaerX3"
+    }
 }

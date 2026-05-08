@@ -1,0 +1,99 @@
+<!--Login page for /admin/credentials -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login</title>
+    <style>
+        * {
+            font-family: monospace;
+        }
+
+        body {
+            margin: 20px;
+            background-color: rgb(0, 0, 0);
+            color: rgb(255, 255, 255);
+        }
+
+        .login-container {
+
+            background-color: rgb(20, 20, 20);
+            padding: 20px;
+            border: 1px solid rgb(255, 255, 255);
+            height: auto;
+            width: 300px;
+        }
+
+        .center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+
+        }
+    </style>
+</head>
+
+<div class="center">
+    <form id="loginForm" class="login-container">
+        <h1>Admin Login</h1>
+        <fieldset style="border: 1px solid #444;">
+            <label for="username">Username:</label><br>
+            <input type="text" id="username" name="username" required><br><br>
+
+            <label for="password">Password:</label><br>
+            <input type="password" id="password" name="password" required><br><br>
+        </fieldset>
+        <br>
+        <button type="submit" id="loginBtn">Login</button>
+        <br>
+        <span id="err" style="color: #ff5555; display: none; margin-top: 10px;"></span>
+    </form>
+</div>
+
+<script>
+    const errEl = document.getElementById('err');
+
+    const showError = (msg) => {
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+    };
+
+    // 1. Initial Check
+    (async () => {
+        try {
+            const res = await fetch('/admin/check', { method: 'POST' });
+            const data = await res.json();
+            if (data.authenticated) window.location.href = '/admin';
+        } catch (e) { console.error("Session check failed"); }
+    })();
+
+    // 2. Handle Login
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault(); // Prevents page refresh
+        
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const res = await fetch('/admin/credentials', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                credentials: "include"
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                localStorage.setItem("usr", username);
+                window.location.href = '/admin';
+            } else {
+                showError('Invalid credentials');
+            }
+        } catch (err) {
+            showError('Server connection error');
+        }
+    });
+</script>

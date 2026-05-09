@@ -710,7 +710,7 @@ td {
     height: 320px;
     transition: all .5s;
     pointer-events: none;
-    transform: translate(327px);
+    transform: translateX(327px);
 }
 
 #chat.open {

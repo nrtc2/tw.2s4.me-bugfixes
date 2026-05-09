@@ -1140,49 +1140,162 @@
                         if (nextSwatch.classList.contains("swatch-p")) {
                             mr(parseInt(nextSwatch.dataset.index));
                         }
-                        else if (nextSwatch.classList.contains("swatch-a")) {
-                            var bgColor = window.getComputedStyle(nextSwatch).backgroundColor;
-                            var rgb = bgColor.match(/\d+/g);
-
-                            if (rgb && rgb.length >= 3) {
-                                mr([parseInt(rgb[0]), parseInt(rgb[1]), parseInt(rgb[2])]);
-                                document.querySelectorAll(".swatch-a.selected, .swatch-p.selected").forEach(el => el.classList.remove("selected"));
-                                nextSwatch.classList.add("selected");
-                            }
+                        k[t(270)][t(522)] = t(538),
+                            ge = !0
+                    }
+                }
+                )),
+                document[n(216)]("pointerleave", Un),
+                document[n(216)](n(487), Un),
+                i[n(216)](n(205), (function (e) {
+                    var t = n;
+                    if (e.preventDefault(),
+                        e[t(294)]) {
+                        if (t(595) != e[t(448)])
+                            return t(543) == e[t(448)] ? (Ce.x -= 1,
+                                Vn(" ", 0, !1, !0) || (Ce.x += 1),
+                                void nr()) : void (null != e[t(698)] && "" != e[t(698)] && t(321) != e[t(448)] && (nr(),
+                                    Array[t(296)](e.data).length > 1 ? tr(e[t(698)]) : Vn(e[t(698)], 1)));
+                        cr()
+                    }
+                }
+                )),
+                
+                i[n(216)](n(689), (function (e) {
+                    var t = n;
+                    if (e[t(294)]) {
+                        switch (e[t(232)]) {
+                            case 38:
+                                window.w.moveCursor("up", 1);
+                                e.preventDefault();
+                                break;
+                            case 40:
+                                window.w.moveCursor("down", 1);
+                                e.preventDefault();
+                                break;
+                            case 37:
+                                window.w.moveCursor("left", 1);
+                                e.preventDefault();
+                                break;
+                            case 39:
+                                window.w.moveCursor("right", 1);
+                                e.preventDefault();
+                                break;
+                            case 9:
+                                window.w.moveCursor("right", 3);
+                                e.preventDefault();
+                                break;
+                            case 36:
+                                Ce.x = Ce[t(258)],
+                                    nr(),
+                                    ie(!1),
+                                    e[t(423)]();
+                                break;
+                            case 46:
+                                Vn(" ", 0, !1, !0),
+                                    nr(),
+                                    e[t(423)]()
                         }
 
                         nextSwatch.scrollIntoView({ block: "nearest", behavior: "smooth" });
                     }
                 }
-                else {
-                    var r = e.deltaX,
-                        a = e["deltaY"];
-                    e.shiftKey && (r ^= a, r ^= a ^= r);
-                    Mn(qe["offset"].x - r, qe.offset.y - a);
-                }
-                ge = !0;
-            }
-        }), { passive: !1 });
-        document["addEventListener"]("pointerup", (function (e) {
-            var t = n;
-            if (e["isTrusted"] && (e["preventDefault"](),
-                e["pointerId"] == Dn && !Nn)) {
-                if (Je && $e["start"] && $e["end"]) {
-                    var r = Math.min($e.start.x, $e["end"].x)
-                        , o = Math["min"]($e.start.y, $e["end"].y)
-                        , i = Math["max"]($e.start.x, $e["end"].x)
-                        , c = Math["max"]($e.start.y, $e["end"].y);
-                    Je = false;
-                    $e = {};
-                    Dn = void 0;
-                    var regionSelection = window.currentRegionSelection;
-                    window.currentRegionSelection = null;
-
-                    regionSelection.onSelectionEvents.forEach(func => {
-                        try {
-                            func(r, o, i, c);
-                        } catch (e) {
-                            console.error("Region selection event handler error:", e);
+                )),
+                undoWrite = function () {
+                    var e = t;
+                    if (0 != Be[e(500)]) {
+                        var n = Be[e(564)]();
+                        Ce.x = n[0],
+                            Ce.y = n[1];
+                        var r = pe
+                            , a = ce()
+                            , o = Zr(n[3]);
+                        pe = o[0],
+                            window.color = pe,
+                            le(o[1]),
+                            Vn(n[2], 0, !0) || Be.unshift(n),
+                            pe = r,
+                            window.color = pe,
+                            le(a)
+                    }
+                },
+                document[n(216)](n(689), (function (e) {
+                    var r = n;
+                    if (e.isTrusted)
+                        switch (e.keyCode) {
+                            case 90:
+                                e.ctrlKey && (undoWrite(),
+                                    e[r(423)]());
+                                break;
+                            case 89:
+                                e[r(225)] && (function () {
+                                    var e = r;
+                                    if (0 != Fe[e(500)]) {
+                                        var t = Fe[e(564)]();
+                                        Ce.x = t[0],
+                                            Ce.y = t[1];
+                                        var n = pe
+                                            , a = ce()
+                                            , o = Zr(t[3]);
+                                        pe = o[0],
+                                            window.color = pe,
+                                            le(o[1]),
+                                            Vn(t[2], 1, !1) || Fe[e(343)](t),
+                                            pe = n,
+                                            window.color = pe,
+                                            le(a)
+                                    }
+                                }(),
+                                    e[r(423)]());
+                                break;
+                            case 67:
+                                e[r(272)] && or(e);
+                                break;
+                            case 71:
+                                e[r(225)] && (e[r(423)](),
+                                    dr());
+                                break;
+                            case 66:
+                                e.ctrlKey && (e[r(423)](),
+                                    br(r(583)),
+                                    ie(!0));
+                                break;
+                            case 73:
+                                e.ctrlKey && (e.preventDefault(),
+                                    br("italic"),
+                                    ie(!0));
+                                break;
+                            case 85:
+                                e.ctrlKey && (e[r(423)](),
+                                    br("underline"),
+                                    ie(!0));
+                                break;
+                            case 83:
+                                e[r(225)] && (e[r(423)](),
+                                    br(r(468)),
+                                    ie(!0));
+                                break;
+                            case 18:
+                                e[r(423)]();
+                                break;
+                            case 27:
+                                Je && (Je = !1,
+                                    $e = {},
+                                    k.style[r(522)] = "text",
+                                    e[r(423)]()),
+                                    M[r(676)][r(627)]("open"),
+                                    ie(!1),
+                                    nr();
+                                break;
+                            case 107:
+                            case 187:
+                                e[r(225)] && (e[r(423)](),
+                                    it(rt + .1, !0));
+                                break;
+                            case 109:
+                            case 189:
+                                e[r(225)] && (e.preventDefault(),
+                                    it(rt - .1, !0))
                         }
                     });
 
@@ -1433,16 +1546,26 @@
                 }
             });
 
+                ping.style.color = color;
+            }
 
-        document["getElementById"]("home")["addEventListener"]("click", (function () {
-            $n(),
-                Zn(0, 0)
-        }
-        )),
-            document["getElementById"]("home")["addEventListener"]("contextmenu", (function (e) {
-                var t = n;
-                e["preventDefault"](),
-                    Cn("textwall", "main") && Zn(0, 0)
+            let hue = 0;
+            window.w = {};
+            window.position = qe;
+            window.elem = tt;
+            window.w.events = {};
+            window.w.on = function (e, t) {
+                if (typeof t != "function") {
+                    throw "Callback is not a function";
+                }
+                if (typeof e != "string") {
+                    throw "Event name is not a string";
+                }
+                e = e.toLowerCase();
+                if (!this.events[e]) {
+                    this.events[e] = [];
+                }
+                this.events[e].push(t);
             }
             )),
             document["getElementById"]("copy")["addEventListener"]("click", or),
@@ -1465,12 +1588,66 @@
             document.getElementById("theme").addEventListener("click", (function () {
                 yr()
             }
-            )),
-            B["addEventListener"]("input", gr),
-            F["addEventListener"]("input", gr),
-            P["addEventListener"]("change", (function (e) {
-                gr(e),
-                    yr(2)
+            window.w.moveCursor = function (direction, amount, doNotAutoPan) {
+                switch (direction) {
+                    case "up":
+                        Ce.y -= amount;
+                        break;
+                    case "down":
+                        Ce.y += amount;
+                        break;
+                    case "left":
+                        Ce.x -= amount;
+                        break;
+                    case "right":
+                        Ce.x += amount;
+                        break;
+                    default:
+                        throw "Invalid direction";
+                        break;
+                }
+                nr();
+                ie(false);
+                window.w.emit("cursormove", [Ce.x, Ce.y]);
+                if (!doNotAutoPan) Hn();
+            };
+            window.w.moveCursorTo = function(x, y, doNotAutoPan) {
+                Ce.x = x;
+                Ce.y = y;
+                Ce.start = x;
+                nr();
+                ie(false);
+                window.w.emit("cursormove", [Ce.x, Ce.y]);
+                if (!doNotAutoPan) Hn();
+            };
+            function parseColoredMessage(msg) {
+                const regex = /<start\s+(#[0-9a-fA-F]{3,6})>([\s\S]*?)<end>/g;
+                const container = document.createElement("span");
+
+                let lastIndex = 0;
+                let match;
+
+                while ((match = regex.exec(msg)) !== null) {
+
+                    if (match.index > lastIndex) {
+                        container.appendChild(document.createTextNode(msg.slice(lastIndex, match.index)));
+                    }
+
+
+                    const colorSpan = document.createElement("span");
+                    colorSpan.style.color = match[1];
+                    colorSpan.textContent = match[2];
+                    container.appendChild(colorSpan);
+
+                    lastIndex = regex.lastIndex;
+                }
+
+
+                if (lastIndex < msg.length) {
+                    container.appendChild(document.createTextNode(msg.slice(lastIndex)));
+                }
+
+                return container;
             }
             )),
             O.addEventListener("input", (function () {
@@ -1808,20 +1985,19 @@
             }),
             document["getElementById"]("addmemberbtn")["addEventListener"]("click", (function (e) {
                 var t = n;
-                e["preventDefault"](),
-                    document["getElementById"]("optionsmenu");
-                var r = document["getElementById"]("inputmember")
-                    , o = document["getElementById"]("memberlist")
-                    , i = r.value.toLowerCase();
-                r["value"] = "",
-                    (i.length = function (e) {
-                        for (var n = t, r = document["getElementById"]("memberlist"), a = 0; a < r["childElementCount"]; a++)
-                            if (r.children[a]["innerText"] == e)
-                                return !0;
-                        return !1
-                    }(i) || i == je) || (mn["test"](i) ? o.childElementCount >= 20 ? ir("You cannot add more than 20 members.", 3e3) : a["send"](Or({
-                        addmem: i
-                    })) : ir("Username is invalid.", 3e3))
+                (tt[t(577)][t(427)] || nt[t(604)][t(427)]) && (e = 0),
+                    pe != e && (Oe = !0);
+                var r = document.getElementById(pe);
+                r[t(676)][t(627)](t(594)),
+                    pe = e,
+                    window.color = pe,
+                    be = xe && 0 == pe ? "rgba(255, 255, 255, 0.6)" : Yr(se[pe], .6),
+                    (r = document[t(628)](pe))[t(676)][t(608)](t(594)),
+                    r[t(214)] < w[t(403)] + 36 && (w[t(403)] = r[t(214)] - 36),
+                    r.offsetTop > w.scrollTop + w[t(503)] && (w.scrollTop = r.offsetTop - w.clientHeight),
+                    document.getElementById("theme-colour")[t(388)](t(265), se[e]),
+                    localStorage[t(460)](t(505), e),
+                    ge = !0
             }
             )),
             J["addEventListener"]("click", (function (e) {

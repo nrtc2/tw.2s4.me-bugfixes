@@ -3305,12 +3305,11 @@ function init_ws() {
 					send(ws, encodeMsgpack({ alert: "You are muted in canvas" }));
 					return;
 				}
-				if (sdata.worldAttr.regonly && !sdata.isAuthenticated) return;
-				if (!sdata.isAuthenticated && adminSettings.l) {
-					send(ws, encodeMsgpack({
-						alert: "Log in to type/edit or send message."
+				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {send(ws, encodeMsgpack({
+						alert: "You are not authorized"
 					}))
-				}
+					return;}
+		
 
 				if (sdata.worldAttr.readonly && !sdata.isMember) return;
 				if (sdata.worldAttr.private && !sdata.isMember) return;
@@ -3366,19 +3365,30 @@ function init_ws() {
 				worldBroadcast(sdata.connectedWorldId, encodeMsgpack({
 					e: { e: resp, clientId: sdata.clientId }
 				}));
-			}
-			else if (packetType === "msg") {
-				const rawMsg = data.msg;
-				let messageText;
-				let channel = "world";
+			} else if ("msg" == packetType) {
+				var message = data.msg;
 
-				if (typeof rawMsg === "string") {
-					messageText = rawMsg;
-				} else if (Array.isArray(rawMsg)) {
-					messageText = rawMsg[0];
-					const supplied = rawMsg[1];
-					channel = (typeof supplied === "string" && supplied.toLowerCase() === "global") ? "global" : "world";
-				} else {
+				if (typeof message != "string") return;
+				if (message.length > 256) return;
+				if (!sdata.isAuthenticated || !isWhitelisted(sdata.authUser)) {
+					send(ws, encodeMsgpack({
+						msg: ["[SERVER]", 4, "You are not authorized", true]
+					}));
+					return;
+				}
+
+				var nick = sdata.clientId;
+				if (sdata.isAuthenticated) {
+					nick = sdata.authUser;
+				}
+				if (sdata.worldAttr.disableChat && !sdata.isMember) {
+					return;
+				}
+
+				if ((chatMutesByIP[sdata.ipAddr] || (sdata.isAuthenticated && chatMutesByUserIDs[sdata.authUserId])) && (sdata.authUser != "textwall") && (!settings.adminList.includes(sdata.authUser))) {
+					send(ws, encodeMsgpack({
+						msg: ["[SERVER]", 4, "You are muted", true]
+					}));
 					return;
 				}
 
@@ -3696,7 +3706,7 @@ function init_ws() {
 			}
 			else if ("register" == packetType) {
 				if (sdata.isAuthenticated) return;
-				if (!sdata.isAuthenticated && adminSettings.regclosed) {
+				if (!sdata.isAuthenticated) {
 					send(ws, encodeMsgpack({
 						noreg: true
 					}))

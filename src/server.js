@@ -1203,7 +1203,7 @@ async function runserver() {
 		res.json(wl);
 	}, { get: true })
 	// STARTER SCRIPTS
-	const STARTER_SCRIPTS_DIR = path.resolve("..", "starter-scripts");
+	const STARTER_SCRIPTS_DIR = settings.db.starterScriptsPath
 	createAdminRequest(".ss", (req, res) => {
 		const scripts = {};
 
@@ -1993,7 +1993,7 @@ async function runserver() {
 			res.status(404).json({ success: false, error: "Not Found" });
 		}
 	});
-	var WORLD_SCRIPTS_DIR = path.resolve("..", "world-scripts");
+	var WORLD_SCRIPTS_DIR = settings.db.worldScriptsPath
 	// .ws/:script
 	twrApp.get(/^\/\.ws\/(.+)$/, (req, res) => {
 		const scriptPath = req.params[0];
@@ -2953,18 +2953,6 @@ function init_ws() {
 		send(ws, encodeMsgpack({ admin: sdata.isAdmin }));
 
 		clients[ws.sdata.clientId] = ws;
-		fs.readFile("../data/starter_scripts.json", "utf8", (err, data) => {
-			if (err) return console.error("failed to read file:", err);
-
-			try {
-				const json = JSON.parse(data);
-				send(ws, encodeMsgpack({ ces: json }));
-
-			} catch (e) {
-				console.error("failed to parse JSON:", e);
-			}
-		});
-
 
 		ws.on("message", function (message, binary) {
 

@@ -6,8 +6,8 @@
         "chatMutePath": "../data/chat_mutes.json",
         "canvasMutePath": "../data/canvas_mutes.json",
         "whitelistPath": "../data/whitelist.json",
-        "onWorldScriptsPath": "../data/on_world_scripts.json",
-        "starterScriptsPath": "../data/starter_scripts.json",
+        "worldScriptsPath": "../data/world_scripts/",
+        "starterScriptsPath": "../data/starter_scripts/",
         "ipBansPath": "../data/ip_bans.json",
         "adminSettings": "../data/admin_settings.json",
         "tagsPath": "../data/tags.json"

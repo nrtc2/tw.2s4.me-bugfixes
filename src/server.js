@@ -714,7 +714,7 @@ async function runserver() {
 			if (token && session) deleteAdminSession(token);
 			res.clearCookie('admin_session', { path: '/' });
 			// is this a request?
-			if (res.headers["content-type"]?.includes("application/json")) {
+			if (req.headers["content-type"]?.includes("application/json")) {
 				return res.status(403).json({ success: false, message: "Not authenticated" });
 			} // or is this a browser?
 			else {

@@ -1494,9 +1494,9 @@
                         localStorage.setItem("shownametags", r),
                             ge = !0;
                         break;
-                    case tt["showchat"]:
+                    case tt["showchat"]: // u forgot classList.remove sir?
                         localStorage["setItem"]("showchat", r),
-                            e["target"]["checked"] ? null : hn.classList["add"]("hidden");
+                            e["target"]["checked"] ? hn.classList.remove("hidden") : hn.classList["add"]("hidden");
                         break;
                     case tt.disablecolour:
                         localStorage.setItem("disablecolour", r),
@@ -2179,7 +2179,8 @@
             document["getElementById"]("connecting1")["innerText"] = "Connected.",
                 document["getElementById"]("connecting2")["innerText"] = "",
                 document["getElementById"]("admin")["style"]["display"] = "none",
-                "" == je && null != localStorage["getItem"]("username") && null != localStorage["getItem"]("token") && (vn(!0),
+                // bug: "" == je returns false because it's not empty when logged in
+                /* "" == je */ && null != localStorage["getItem"]("username") && null != localStorage["getItem"]("token") && (vn(!0),
                     a["send"](Or({
                         token: [localStorage["getItem"]("username"), localStorage["getItem"]("token")]
                     })));

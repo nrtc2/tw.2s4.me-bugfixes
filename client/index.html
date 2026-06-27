@@ -427,7 +427,21 @@
 						<h3>Miscellaneous</h3>
 						<button id="erudaBtn" onclick="loadEruda()">Load Eruda</button>
 					</div>
+					<script>
+						function loadEruda() {
+							const btn = document.getElementById('erudaBtn');
+							btn.parentNode.removeChild(btn);
+							const script = document.createElement('script');
+							script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+							script.onload = () => {
+								eruda.init();
+								alert("if you see this message, eruda has loaded successfully");
+							};
 
+							document.body.appendChild(script);
+						}
+					</script>
+					
 
 					<div id="explore" class="tab-content">
 						<h3>Explore</h3>

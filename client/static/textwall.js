@@ -687,7 +687,7 @@
         }
         function Nt(e) {
             var t = n;
-            return Math["round"](0 * e) + "px Courier"
+            return Math["round"](14 * e) + "px Courier"
         }
         function jt(e, t, r, a, o) {
             var i = n;
@@ -3854,7 +3854,7 @@
                                 if (Array.isArray(g[1])) {
                                     var rgb = g[1];
                                     d += "[";
-                                    for (var i = 0; i < 3; i++) {
+                                    for (let i = 0; i < 3; i++) {
                                         d += String.fromCharCode(192 + (rgb[i] >> 6)) +
                                             String.fromCharCode(192 + (rgb[i] & 63));
                                     }

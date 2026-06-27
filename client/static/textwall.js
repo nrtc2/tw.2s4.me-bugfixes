@@ -4471,12 +4471,13 @@
             }
 
             const Kf = a * Rn + r;
-            return Vz.clr[Kf] % 31;
+            const Og = Vz.clr[Kf]
+            return Array.isArray(Og) ? Og.slice(0, 3) : Og % 31;
         };
 
         window.getCharDecoration = function (e) {
 
-            const Lj = Math.floor(e / 31);
+            const Lj = Array.isArray(e) ? e[3] : Math.floor(e / 31);
             return {
 
                 bold: (Lj & 8) == 8,
@@ -4509,12 +4510,12 @@
             const Pd = a * Nw + r;
             const Uf = Qm.txt[Pd];
             const Jy = Qm.clr[Pd];
-            const Gh = Jy % 31;
+            const Gh = Zu ? Jy.slice(0, 3) : Jy % 31;
             return {
                 tileCoords: [e, t, r, a],
                 char: Uf,
                 color: Gh,
-                deco: getCharDecoration(Jy)
+                deco: getCharDecoration(Zu)
             };
         };
 
